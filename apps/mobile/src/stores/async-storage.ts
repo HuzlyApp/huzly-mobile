@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { StorageKey } from '@/src/storage/keys';
+import type { StorageKey } from '@/stores/keys';
 
 export async function setItem(key: StorageKey | string, value: string): Promise<void> {
   await AsyncStorage.setItem(key, value);

@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance } from 'axios';
 
-import { env } from '@/src/config/env';
+import { env } from '@/lib/config/env';
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL: env.apiBaseUrl,
