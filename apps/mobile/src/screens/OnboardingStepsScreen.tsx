@@ -72,12 +72,24 @@ export default function OnboardingStepsScreen() {
   const progressPercent = PLACEHOLDER_PROGRESS_PERCENT || computedProgress;
 
   const handleStepPress = (step: OnboardingStep) => {
+    if (step.id === "add-skills-role") {
+      router.push({ pathname: '/job-roles' });
+      console.log('[Onboarding] pressed:', step.id, step.routeKey, step.title);
+      return;
+    }
     if (step.id === "upload-requirements") {
-      router.push("/requirements");
+      router.push({ pathname: '/requirements' });
+      console.log('[Onboarding] pressed:', step.id, step.routeKey, step.title);
       return;
     }
     if (step.id === "acknowledgement") {
-      router.push("/acknowledgement");
+      router.push({ pathname: '/acknowledgement' });
+      console.log('[Onboarding] pressed:', step.id, step.routeKey, step.title);
+      return;
+    }
+    if (step.id === "setup-payment-method") {
+      router.push({ pathname: '/payment-method' });
+      console.log('[Onboarding] pressed:', step.id, step.routeKey, step.title);
       return;
     }
   

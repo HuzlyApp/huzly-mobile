@@ -1,99 +1,196 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-import { Link } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import React from 'react';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+const BG = '#F3F4F6';
+const PRIMARY = '#2F6BFF';
+const TEXT_PRIMARY = '#1F2937';
+const TEXT_SECONDARY = '#4473C0';
+const WHITE = '#FFFFFF';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('../../assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const router = useRouter();
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const onContinue = () => {
+    // TODO: change destination as needed
+    router.push('/welcome');
+  };
+
+  const onSkip = () => {
+    router.push('/onboarding-steps');
+  };
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.container}>
+        {/* Background image (faded) */}
+        <Image
+          // TODO: replace with your real background image
+          // Put an image at: apps/mobile/src/assets/images/worker-bg.jpg (example)
+          source={require('@/assets/images/worker-bg.jpg')}
+          style={styles.bgImage}
+          resizeMode="cover"
+        />
+        <View style={styles.bgOverlay} />
+
+        {/* Content */}
+        <View style={styles.content}>
+  
+          {/* TOP CENTER CONTENT */}
+          <View style={styles.centerContent}>
+            <LinearGradient
+              colors={['#2F6BFF', '#1E40AF']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.iconCard}
+            >
+            <Image
+              source={require('@/assets/images/worker-profile.png')}
+              style={styles.iconImage}
+              resizeMode="contain"
+            />
+            </LinearGradient>
+
+            <Text style={styles.title}>Apply as Worker</Text>
+
+            <Text style={styles.subtitle}>
+              Empowering skilled workers to connect, {'\n'}
+              earn, and grow through smarter job {'\n'}
+              matching.
+            </Text>
+          </View>
+
+        {/* BOTTOM SECTION */}
+          <View style={styles.bottomSection}>
+          <View style={styles.buttons}>
+            <Pressable style={styles.primaryBtn} onPress={onContinue}>
+              <Text style={styles.primaryText}>Continue</Text>
+            </Pressable>
+
+            <Pressable style={styles.secondaryBtn} onPress={onSkip}>
+              <Text style={styles.secondaryText}>Skip</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.dots}>
+            <View style={[styles.dot, styles.dotActive]} />
+            <View style={styles.dot} />
+            {/* <View style={styles.dot} /> */}
+          </View>
+        </View>
+        </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  safe: { flex: 1, backgroundColor: BG },
+  container: { flex: 1, backgroundColor: BG },
+
+  bgImage: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.28, // faded like screenshot
+  },
+  bgOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: BG,
+    opacity: 0.65,
+  },
+
+  content: {
+    flex: 1,
+    paddingHorizontal: 24,
+    justifyContent: 'space-between',
+  },
+
+  iconCard: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+    marginBottom: 14,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+
+  iconImage: {
+    width: 46,
+    height: 55,
+    tintColor: WHITE,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+
+  title: {
+    fontSize: 30,
+    fontWeight: '600',
+    color: TEXT_PRIMARY,
+    marginBottom: 10,
+  },
+
+  subtitle: {
+    fontSize: 16,
+    lineHeight: 18,
+    color: TEXT_SECONDARY,
+    textAlign: 'center',
+    maxWidth: 280,
+    marginBottom: 30,
+  },
+
+  buttons: {
+    width: '100%',
+    marginTop: 12,
+  },
+
+  centerContent: {
+    alignItems: 'center',
+    marginTop: 80,
+  },
+
+  bottomSection: {
+    paddingBottom: 30,
+  },
+
+  primaryBtn: {
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: PRIMARY,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  primaryText: { color: WHITE, fontWeight: '700', fontSize: 14 },
+
+  secondaryBtn: {
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryText: { color: TEXT_PRIMARY, fontWeight: '700', fontSize: 14 },
+
+  dots: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dot: {
+    width: 22,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: '#D1D5DB',
+  },
+  dotActive: {
+    backgroundColor: PRIMARY,
   },
 });
-

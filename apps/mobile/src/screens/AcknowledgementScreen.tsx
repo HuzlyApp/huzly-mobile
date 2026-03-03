@@ -41,7 +41,7 @@ function Checkbox({ value, onChange, disabled }: CheckboxProps) {
 
 export default function AcknowledgementScreen() {
   const router = useRouter();
-  const [isAgreed, setIsAgreed] = useState(true); // checked by default like Figma
+  const [isAgreed, setIsAgreed] = useState(false); 
 
   const isSubmitDisabled = useMemo(() => !isAgreed, [isAgreed]);
 

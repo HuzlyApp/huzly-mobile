@@ -1,6 +1,6 @@
-import React from 'react';
-import { Pressable, PressableStateCallbackType, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React from 'react';
+import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 
 type OnboardingStepItemProps = {
   index: number;
@@ -16,25 +16,30 @@ const TEXT_SECONDARY = '#6B7280';
 const CARD_BACKGROUND = '#FFFFFF';
 
 export function OnboardingStepItem({ index, title, subtitle, onPress }: OnboardingStepItemProps) {
-  const renderStyle = ({ pressed }: PressableStateCallbackType): ViewStyle[] => [
+  const renderStyle = ({ pressed }: { pressed: boolean }): (ViewStyle | undefined)[] => [
     styles.container,
-    pressed && styles.containerPressed,
+    pressed ? styles.containerPressed : undefined,
   ];
 
   return (
     <Pressable
       onPress={onPress}
       android_ripple={{ color: 'rgba(47, 107, 255, 0.08)', borderless: false }}
-      style={renderStyle}>
+      style={renderStyle}
+    >
       <View style={styles.row}>
         <View style={styles.circle}>
           <Text style={styles.circleText}>{index}</Text>
         </View>
+
         <View style={styles.textContainer}>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.subtitle}>{subtitle}</Text>
         </View>
-        <Ionicons name="chevron-forward" size={20} color={PRIMARY_BLUE} />
+
+        <View pointerEvents="none">
+          <Ionicons name="chevron-forward" size={20} color={PRIMARY_BLUE} />
+        </View>
       </View>
     </Pressable>
   );
@@ -86,4 +91,3 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
 });
-
