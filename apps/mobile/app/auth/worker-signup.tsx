@@ -15,10 +15,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { signUpWithEmail, signUpWithPhone } from '@/lib/auth/auth.service';
+
 const BG = '#FFFFFF';
 const BORDER = '#CBD5E1';
 const BORDER_SOFT = '#E5E7EB';
-
 const TEXT_PRIMARY = '#1F2937';
 const TEXT_SECONDARY = '#0F172A';
 const PRIMARY = '#3B6FD8';
@@ -33,16 +34,19 @@ export default function WorkerSignUpScreen() {
   const [method, setMethod] = useState<Method>('email');
   const [agreed, setAgreed] = useState(false);
 
-  // email
+  // email fields
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
 
-  // phone (digits only)
+  // phone fields (digits only)
   const [phoneDigits, setPhoneDigits] = useState('');
   const [phoneFocused, setPhoneFocused] = useState(false);
-  const [phone, setPhone] = useState('');
+
+  // async state
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // US only
   const country = useMemo(() => ({ dial: '+1' }), []);
@@ -54,7 +58,6 @@ export default function WorkerSignUpScreen() {
     const a = d.slice(0, 3);
     const b = d.slice(3, 6);
     const c = d.slice(6, 10);
-
     if (d.length === 0) return '';
     if (d.length <= 3) return `${a}`;
     if (d.length <= 6) return `${a}-${b}`;
@@ -68,41 +71,64 @@ export default function WorkerSignUpScreen() {
 
   const onCancel = () => router.back();
 
-  const onPrimary = () => {
-    const next = '/onboarding-steps'
-  
-    if (method === 'phone') {
-      const digits = phone.replace(/\D/g, '');
-      if (digits.length !== 10) return;
-  
-      const to = `+1${digits}`;
-      router.push(
-        `/auth/confirm-phone?channel=phone&to=${encodeURIComponent(to)}&next=${encodeURIComponent(next)}`
-      );
-      return;
+  const onPrimary = async () => {
+    setErrorMsg(null);
+    setLoading(true);
+
+    try {
+      if (method === 'phone') {
+        const phoneE164 = `+1${phoneDigits}`;
+        const { error } = await signUpWithPhone({ phone: phoneE164, role: 'worker' });
+        if (error) {
+          setErrorMsg(error);
+          return;
+        }
+        // OTP sent — go to confirm-phone screen
+        router.push(
+          `/auth/confirm-phone?phone=${encodeURIComponent(phoneE164)}&next=${encodeURIComponent('/onboarding-steps')}`
+        );
+        return;
+      }
+
+      // ── Email sign-up ───────────────────────────────────────
+      const { data, error } = await signUpWithEmail({
+        email,
+        password: pw,
+        fullName,
+        role: 'worker',
+      });
+
+      if (error) {
+        setErrorMsg(error);
+        return;
+      }
+
+      if (data?.needsEmailConfirm) {
+        // Supabase email confirmation is ON — show pending screen
+        router.push(
+          `/auth/confirm-email?email=${encodeURIComponent(email.trim().toLowerCase())}&next=${encodeURIComponent('/onboarding-steps')}`
+        );
+      } else {
+        // Email confirmation disabled — user is signed in immediately
+        router.replace('/onboarding-steps');
+      }
+    } finally {
+      setLoading(false);
     }
-  
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail) return;
-  
-    router.push(
-      `/auth/confirm-email?channel=email&to=${encodeURIComponent(normalizedEmail)}&next=${encodeURIComponent(next)}`
-    );
   };
 
-  const onSignInLink = () => {
-    // route to sign-in if you have it
-    // router.push('/auth/worker-signin');
-  };
+  const onSignInLink = () => router.push('/auth/worker-signin');
 
   function SocialCircle({ children }: { children: ReactNode }) {
     return <Pressable style={styles.socialCircle}>{children}</Pressable>;
   }
 
   const canSubmit = useMemo(() => {
-    if (method === 'phone') return phoneDigits.trim().length === 10 && agreed;
-    return agreed && fullName.trim().length > 0 && email.trim().length > 0 && pw.length >= 6 && pw === pw2;
-  }, [method, phoneDigits, agreed, fullName, email, pw, pw2]);
+    if (loading) return false;
+    if (!agreed) return false;
+    if (method === 'phone') return phoneDigits.trim().length === 10;
+    return fullName.trim().length > 0 && email.trim().length > 0 && pw.length >= 6 && pw === pw2;
+  }, [method, phoneDigits, agreed, fullName, email, pw, pw2, loading]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -116,7 +142,7 @@ export default function WorkerSignUpScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Logo */}
-          <View style={styles.container}>
+          <View style={styles.logoWrap}>
             <Image
               source={require('@/assets/logos/Huzly-logo.svg')}
               style={styles.logo}
@@ -130,7 +156,7 @@ export default function WorkerSignUpScreen() {
           <View style={styles.segmentOuter}>
             <View style={styles.segmentInner}>
               <Pressable
-                onPress={() => setMethod('email')}
+                onPress={() => { setMethod('email'); setErrorMsg(null); }}
                 style={[styles.segmentBtn, method === 'email' && styles.segmentBtnActive]}
               >
                 <Text style={[styles.segmentText, method === 'email' && styles.segmentTextActive]}>
@@ -138,7 +164,7 @@ export default function WorkerSignUpScreen() {
                 </Text>
               </Pressable>
               <Pressable
-                onPress={() => setMethod('phone')}
+                onPress={() => { setMethod('phone'); setErrorMsg(null); }}
                 style={[styles.segmentBtn, method === 'phone' && styles.segmentBtnActive]}
               >
                 <Text style={[styles.segmentText, method === 'phone' && styles.segmentTextActive]}>
@@ -158,7 +184,6 @@ export default function WorkerSignUpScreen() {
                 placeholder="Full Name"
                 autoCapitalize="words"
               />
-
               <Field
                 label="Email"
                 value={email}
@@ -167,7 +192,6 @@ export default function WorkerSignUpScreen() {
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
-
               <Field
                 label="Create password"
                 value={pw}
@@ -175,7 +199,6 @@ export default function WorkerSignUpScreen() {
                 placeholder="Password"
                 secureTextEntry
               />
-
               <Field
                 label="Verify password"
                 value={pw2}
@@ -187,9 +210,7 @@ export default function WorkerSignUpScreen() {
           ) : (
             <View style={styles.form}>
               <Text style={styles.label}>Enter Phone Number</Text>
-
               <View style={[styles.phoneRow, phoneFocused && styles.phoneRowFocused]}>
-                {/* Left flag segment */}
                 <View style={styles.flagSegment}>
                   <Image
                     source={require('@/assets/images/flagImage.png')}
@@ -197,11 +218,7 @@ export default function WorkerSignUpScreen() {
                     resizeMode="contain"
                   />
                 </View>
-
-                {/* Divider */}
                 <View style={styles.phoneDivider} />
-
-                {/* Input segment */}
                 <View style={styles.inputSegment}>
                   <Text style={styles.dialText}>{country.dial}-</Text>
                   <TextInput
@@ -210,7 +227,7 @@ export default function WorkerSignUpScreen() {
                     placeholder="___-___-____"
                     placeholderTextColor="#94A3B8"
                     keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
-                    inputMode="numeric" // web
+                    inputMode="numeric"
                     textContentType="telephoneNumber"
                     onFocus={() => setPhoneFocused(true)}
                     onBlur={() => setPhoneFocused(false)}
@@ -224,12 +241,18 @@ export default function WorkerSignUpScreen() {
             </View>
           )}
 
-          {/* Checkbox */}
+          {/* Error banner */}
+          {errorMsg ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            </View>
+          ) : null}
+
+          {/* Terms checkbox */}
           <Pressable onPress={() => setAgreed((v) => !v)} style={styles.checkRow} hitSlop={8}>
             <View style={[styles.checkbox, agreed && styles.checkboxChecked]}>
               {agreed ? <Text style={styles.checkmark}>✓</Text> : null}
             </View>
-
             <Text style={styles.checkText}>
               I hereby confirm that I have read and agree with the{' '}
               <Text style={styles.linkBold}>Terms &amp; Conditions</Text> and{' '}
@@ -237,18 +260,17 @@ export default function WorkerSignUpScreen() {
             </Text>
           </Pressable>
 
-          {/* Buttons row */}
+          {/* Buttons */}
           <View style={styles.btnRow}>
-            <Pressable style={styles.cancelBtn} onPress={onCancel}>
+            <Pressable style={styles.cancelBtn} onPress={onCancel} disabled={loading}>
               <Text style={styles.cancelText}>Cancel</Text>
             </Pressable>
-
             <Pressable
               style={[styles.primaryBtn, !canSubmit && styles.primaryBtnDisabled]}
               onPress={onPrimary}
               disabled={!canSubmit}
             >
-              <Text style={styles.primaryText}>Sign Up</Text>
+              <Text style={styles.primaryText}>{loading ? 'Please wait…' : 'Sign Up'}</Text>
             </Pressable>
           </View>
 
@@ -261,26 +283,16 @@ export default function WorkerSignUpScreen() {
 
           {/* Social */}
           <View style={styles.socialRow}>
-            <SocialCircle>
-              <FontAwesome name="facebook" size={22} color="#1877F2" />
-            </SocialCircle>
-
-            <SocialCircle>
-              <AntDesign name="google" size={22} color="#DB4437" />
-            </SocialCircle>
-
-            <SocialCircle>
-              <AntDesign name="apple" size={22} color="#000" />
-            </SocialCircle>
+            <SocialCircle><FontAwesome name="facebook" size={22} color="#1877F2" /></SocialCircle>
+            <SocialCircle><AntDesign name="google" size={22} color="#DB4437" /></SocialCircle>
+            <SocialCircle><AntDesign name="apple" size={22} color="#000" /></SocialCircle>
           </View>
 
           {/* Bottom link */}
           <View style={styles.bottomRow}>
             <Text style={styles.bottomText}>
               Already have an account?{' '}
-              <Text style={styles.bottomLink} onPress={onSignInLink}>
-                Sign In
-              </Text>
+              <Text style={styles.bottomLink} onPress={onSignInLink}>Sign In</Text>
             </Text>
           </View>
         </ScrollView>
@@ -289,7 +301,7 @@ export default function WorkerSignUpScreen() {
   );
 }
 
-/** Reusable Field */
+/** Reusable Field component */
 function Field(props: {
   label: string;
   value: string;
@@ -322,29 +334,12 @@ function Field(props: {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
   kav: { flex: 1 },
-  scroll: {
-    paddingHorizontal: 24,
-    paddingTop: 18,
-    paddingBottom: 28,
-  },
+  scroll: { paddingHorizontal: 24, paddingTop: 18, paddingBottom: 28 },
 
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logo: {
-    width: 107,
-    height: 41,
-    marginBottom: 20,
-    marginTop: 20,
-  },
-  h1: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: TEXT_PRIMARY,
-    textAlign: 'center',
-  },
+  logoWrap: { alignItems: 'center', marginTop: 20 },
+  logo: { width: 107, height: 41, marginBottom: 20 },
+
+  h1: { fontSize: 24, fontWeight: '600', color: TEXT_PRIMARY, textAlign: 'center' },
 
   segmentOuter: { marginTop: 16 },
   segmentInner: {
@@ -353,13 +348,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 4,
   },
-  segmentBtn: {
-    flex: 1,
-    height: 34,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  segmentBtn: { flex: 1, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   segmentBtnActive: { backgroundColor: WHITE },
   segmentText: { fontSize: 12, fontWeight: '700', color: TEXT_SECONDARY },
   segmentTextActive: { color: TEXT_PRIMARY },
@@ -367,7 +356,6 @@ const styles = StyleSheet.create({
   form: { marginTop: 14 },
   field: { marginTop: 10 },
   label: { fontSize: 12, color: TEXT_SECONDARY, marginBottom: 6, fontWeight: '600' },
-
   input: {
     height: 42,
     borderWidth: 1,
@@ -379,7 +367,17 @@ const styles = StyleSheet.create({
     backgroundColor: WHITE,
   },
 
-  // NEW phone input (same as your sign-in)
+  errorBox: {
+    marginTop: 10,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#EF4444',
+  },
+  errorText: { fontSize: 12, color: '#DC2626' },
+
   phoneRow: {
     height: 50,
     borderRadius: 8,
@@ -390,122 +388,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
   },
-  phoneRowFocused: {
-    borderColor: PRIMARY,
-  },
-  flagSegment: {
-    width: 60,
-    height: 70,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  flagImage: {
-    width: 24,
-    height: 16,
-  },
-  phoneDivider: {
-    width: 1,
-    height: '100%',
-    backgroundColor: '#AABEE1',
-  },
-  inputSegment: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-  },
-  dialText: {
-    fontSize: 16,
-    fontWeight: '400',
-    color: TEXT_SECONDARY,
-  },
-  phoneInput: {
-    flex: 1,
-    height: '100%',
-    fontSize: 16,
-    fontWeight: '400',
-    color: TEXT_PRIMARY,
-    paddingVertical: 0,
-  },
+  phoneRowFocused: { borderColor: PRIMARY },
+  flagSegment: { width: 60, height: 70, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
+  flagImage: { width: 24, height: 16 },
+  phoneDivider: { width: 1, height: '100%', backgroundColor: '#AABEE1' },
+  inputSegment: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
+  dialText: { fontSize: 16, fontWeight: '400', color: TEXT_SECONDARY },
+  phoneInput: { flex: 1, height: '100%', fontSize: 16, fontWeight: '400', color: TEXT_PRIMARY, paddingVertical: 0 },
 
-  checkRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: 14,
-  },
+  checkRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 14 },
   checkbox: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: '#94A3B8',
-    marginRight: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-    backgroundColor: WHITE,
+    width: 16, height: 16, borderRadius: 4, borderWidth: 1.5,
+    borderColor: '#94A3B8', marginRight: 10, alignItems: 'center',
+    justifyContent: 'center', marginTop: 2, backgroundColor: WHITE,
   },
-  checkboxChecked: {
-    borderColor: PRIMARY,
-    backgroundColor: PRIMARY,
-  },
+  checkboxChecked: { borderColor: PRIMARY, backgroundColor: PRIMARY },
   checkmark: { color: WHITE, fontSize: 12, fontWeight: '900', marginTop: -1 },
-  checkText: {
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: 400 as any,
-    color: TEXT_SECONDARY,
-  },
+  checkText: { flex: 1, fontSize: 12, lineHeight: 16, fontWeight: 400 as any, color: TEXT_SECONDARY },
   linkBold: { color: TEXT_PRIMARY, fontWeight: '600' },
 
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
   cancelBtn: {
-    flex: 1,
-    height: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: BORDER_SOFT,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: WHITE,
+    flex: 1, height: 44, borderRadius: 8, borderWidth: 1,
+    borderColor: BORDER_SOFT, alignItems: 'center', justifyContent: 'center', backgroundColor: WHITE,
   },
   cancelText: { color: TEXT_PRIMARY, fontWeight: '600', fontSize: 14 },
-
-  primaryBtn: {
-    flex: 1,
-    height: 44,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: PRIMARY,
-  },
+  primaryBtn: { flex: 1, height: 44, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: PRIMARY },
   primaryBtnDisabled: { opacity: 0.7 },
   primaryText: { color: WHITE, fontWeight: '600', fontSize: 14 },
 
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 22,
-  },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 22 },
   dividerLine: { flex: 1, height: 1, backgroundColor: BORDER_SOFT },
   dividerText: { marginHorizontal: 10, fontSize: 11, color: '#94A3B8' },
 
-  socialRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-    marginTop: 14,
-  },
+  socialRow: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 14 },
   socialCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 10,
+    width: 50, height: 50, borderRadius: 25,
+    backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginHorizontal: 10,
   },
 
   bottomRow: { marginTop: 16, alignItems: 'center' },

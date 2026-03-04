@@ -4,3 +4,33 @@
 
 expo-env.d.ts
 # @end expo-cli
+
+# -------------------------------------------------------
+# Environment variables — NEVER commit secrets to git
+# -------------------------------------------------------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+# .env.example is intentionally NOT listed here — it is safe to commit
+
+# -------------------------------------------------------
+# Dependencies
+# -------------------------------------------------------
+node_modules/
+
+# -------------------------------------------------------
+# Expo / React Native build artifacts
+# -------------------------------------------------------
+.expo/
+dist/
+web-build/
+android/
+ios/
+
+# -------------------------------------------------------
+# OS artifacts
+# -------------------------------------------------------
+.DS_Store
+Thumbs.db
