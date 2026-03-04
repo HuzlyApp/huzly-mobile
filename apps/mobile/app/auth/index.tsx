@@ -1,6 +1,7 @@
+import { AntDesign, FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const BG = '#F3F4F6';
@@ -8,6 +9,7 @@ const PRIMARY = '#2F6BFF';
 const TEXT_PRIMARY = '#111827';
 const TEXT_SECONDARY = '#6B7280';
 const WHITE = '#FFFFFF';
+const BORDER_SOFT = '#E5E7EB';
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -25,7 +27,13 @@ export default function AuthScreen() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
         {/* Logo */}
-        <Text style={styles.logo}>Huzly</Text>
+        <View style={styles.logoWrap}>
+          <Image
+            source={require('@/assets/logos/Huzly-logo.svg')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </View>
 
         {/* Segmented Control */}
         <View style={styles.segmentWrapper}>
@@ -66,15 +74,17 @@ export default function AuthScreen() {
 
         {/* Social Buttons (UI only) */}
         <View style={styles.socialRow}>
-          <View style={styles.socialCircle}>
-            <Text>f</Text>
-          </View>
-          <View style={styles.socialCircle}>
-            <Text>G</Text>
-          </View>
-          <View style={styles.socialCircle}>
-            <Text></Text>
-          </View>
+          <SocialCircle onPress={() => console.log('facebook')}>
+            <FontAwesome name="facebook" size={22} color="#1877F2" />
+          </SocialCircle>
+
+          <SocialCircle onPress={() => console.log('google')}>
+            <AntDesign name="google" size={22} color="#DB4437" />
+          </SocialCircle>
+
+          <SocialCircle onPress={() => console.log('apple')}>
+            <FontAwesome name="apple" size={24} color="#000" />
+          </SocialCircle>
         </View>
 
         {/* Bottom Switch */}
@@ -100,6 +110,25 @@ export default function AuthScreen() {
   );
 }
 
+function SocialCircle({
+  children,
+  onPress,
+}: {
+  children: React.ReactNode;
+  onPress?: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={10}
+      android_ripple={{ color: BORDER_SOFT, borderless: true }}
+      style={({ pressed }) => [styles.socialCircle, pressed && styles.socialCirclePressed]}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
   container: {
@@ -107,13 +136,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 40,
   },
-
+  logoWrap: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 20,
+  },
   logo: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: TEXT_PRIMARY,
-    alignSelf: 'center',
-    marginBottom: 30,
+    width: 160,
+    height: 52,
   },
 
   segmentWrapper: {
@@ -175,7 +205,7 @@ const styles = StyleSheet.create({
   line: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: BORDER_SOFT,
   },
 
   dividerText: {
@@ -191,14 +221,21 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
 
+  // Updated social circle to "legit" icon button style (white + grey ring)
   socialCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 32,
     backgroundColor: WHITE,
+    borderWidth: 2,
+    borderColor: BORDER_SOFT,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
+  },
+
+  socialCirclePressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
   },
 
   bottomTextWrapper: {
