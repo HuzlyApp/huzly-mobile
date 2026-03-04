@@ -1,7 +1,21 @@
+/**
+ * confirm-phone.tsx
+ *
+ * Confirmation screen shown before sending an OTP.
+ * Calls signUpWithPhone (or signInWithPhone) to actually send the SMS.
+ * Then navigates to /auth/otp to collect the code.
+ *
+ * URL params:
+ *   - phone  : E.164 phone number (e.g. "+12025550100")
+ *   - next   : Route to navigate to after successful verification
+ */
+
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { signUpWithPhone } from '@/lib/auth/auth.service';
 
 const BG = '#FFFFFF';
 const TEXT_PRIMARY = '#111827';
@@ -39,7 +53,7 @@ export default function ConfirmPhoneScreen() {
   const onCancel = () => router.back();
 
   const onContact = () => {
-    Alert.alert('Contact Us', 'TODO: Route to support or open email.');
+    Alert.alert('Contact Us', 'Please email support@huzly.com for help.');
   };
 
   const onSend = async () => {
@@ -50,15 +64,21 @@ export default function ConfirmPhoneScreen() {
 
     setSending(true);
     try {
-      // TODO: send OTP (Supabase/backend)
-      await new Promise((r) => setTimeout(r, 600));
+      // Send OTP via Supabase phone auth
+      const { error } = await signUpWithPhone({ phone: phoneE164, role: 'worker' });
 
+      if (error) {
+        Alert.alert('Error', error);
+        return;
+      }
+
+      // Navigate to OTP entry screen
       router.push({
         pathname: '/auth/otp',
         params: { phone: phoneE164, next: params.next ?? '' },
       });
-    } catch {
-      Alert.alert('Error', 'Failed to send OTP. Try again.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to send OTP. Try again.');
     } finally {
       setSending(false);
     }
@@ -81,7 +101,7 @@ export default function ConfirmPhoneScreen() {
           >
             {sending ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <ActivityIndicator />
+                <ActivityIndicator color="#fff" />
                 <Text style={styles.primaryText}>Sending…</Text>
               </View>
             ) : (
