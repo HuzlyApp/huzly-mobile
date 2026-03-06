@@ -1,197 +1,213 @@
-/**
- * auth.service.ts
- *
- * All Supabase Auth operations for the Huzly app.
- * Import `supabase` ONLY from '@/lib/config/supabase'.
- * Never instantiate a second client elsewhere.
- */
+// apps/mobile/src/lib/auth/auth.service.ts
 
 import { supabase } from '@/lib/config/supabase';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+type Role = 'Worker' | 'Client';
 
-export type AuthRole = 'worker' | 'employer';
+type SignUpEmailArgs = {
+  email: string;
+  password: string;
+  fullName?: string;
+  role?: Role;
+};
 
-export interface SignUpEmailPayload {
-    email: string;
-    password: string;
-    fullName: string;
-    role: AuthRole;
-}
+type SignUpPhoneArgs = {
+  phone: string; // E.164 format: +639xxxxxxxxx / +1xxxxxxxxxx
+  role?: Role;
+};
 
-export interface SignInEmailPayload {
-    email: string;
-    password: string;
-}
-
-export interface SignUpPhonePayload {
-    phone: string; // E.164 format, e.g. "+12025550100"
-    role: AuthRole;
-}
-
-export interface AuthServiceResult<T = void> {
-    data: T | null;
-    error: string | null;
-}
-
-// ─── Sign-Up ──────────────────────────────────────────────────────────────────
-
-/**
- * Sign up with email + password.
- *
- * After Supabase creates the auth user the server-side DB trigger
- * (handle_new_user) automatically inserts a row into public.profiles.
- *
- * Returns:
- *   - data.session → null when email confirmation is required
- *   - data.user    → always present on success
- */
-export async function signUpWithEmail(
-    payload: SignUpEmailPayload
-): Promise<AuthServiceResult<{ needsEmailConfirm: boolean }>> {
-    const { email, password, fullName, role } = payload;
+export async function signUpWithEmail(args: SignUpEmailArgs): Promise<{
+  data: { needsEmailConfirm: boolean; userId?: string };
+  error: string | null;
+}> {
+  try {
+    const email = args.email.trim().toLowerCase();
+    const password = args.password;
 
     const { data, error } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
-        password,
-        options: {
-            data: {
-                full_name: fullName.trim(),
-                role,
-            },
+      email,
+      password,
+      options: {
+        data: {
+          full_name: args.fullName ?? '',
+          role: args.role ?? 'Worker',
         },
+        // emailRedirectTo: 'yourapp://auth/callback',
+      },
     });
 
     if (error) {
-        return { data: null, error: error.message };
+      return {
+        data: { needsEmailConfirm: false },
+        error: error.message,
+      };
     }
 
-    // session is null when email confirmation is enabled in Supabase dashboard
-    const needsEmailConfirm = data.session === null;
+    const needsEmailConfirm = !data.session;
 
-    return { data: { needsEmailConfirm }, error: null };
+    return {
+      data: {
+        needsEmailConfirm,
+        userId: data.user?.id,
+      },
+      error: null,
+    };
+  } catch (e: any) {
+    return {
+      data: { needsEmailConfirm: false },
+      error: e?.message ?? 'Signup failed',
+    };
+  }
 }
 
 /**
- * Sign up with phone number (OTP flow).
- * Sends an SMS OTP — call verifyPhoneOtp() after the user enters the code.
+ * Send phone OTP via Supabase Auth.
  */
-export async function signUpWithPhone(
-    payload: SignUpPhonePayload
-): Promise<AuthServiceResult> {
-    const { phone, role } = payload;
+// export async function sendPhoneOtp(args: SignUpPhoneArgs): Promise<{ error: string | null }> {
+//   try {
+//     console.log("📱 OTP will be sent to:", args.phone);
+//     const { data, error } = await supabase.auth.signInWithOtp({
+//       phone: args.phone,
+//       options: {
+//         data: {
+//           role: args.role ?? 'worker',
+//         },
+//       },
+//     });
+//     console.log('[SUPABASE OTP] data:', data);
+//     console.log('[SUPABASE OTP] error:', error);
 
-    const { error } = await supabase.auth.signInWithOtp({
-        phone,
-        options: {
-            data: { role },
-            // channel: 'sms'  ← default; or 'whatsapp'
-        },
-    });
-
-    if (error) {
-        return { data: null, error: error.message };
+//     console.log("📱 OTP will be sent to:", args.phone);
+//     if (error) return { error: error.message };
+//     console.log("✅ OTP request successfully sent");
+//     return { error: null };
+//   } catch (e: any) {
+//     console.log("❌ OTP exception:", e);
+//     return { error: e?.message ?? 'Failed to send phone OTP' };
+//   }
+// }
+export async function sendPhoneOtp(args: SignUpPhoneArgs) {
+  const { data, error } = await supabase.functions.invoke(
+    "send-phone-otp",
+    {
+      body: { phone: args.phone },
     }
+  );
 
-    return { data: null, error: null };
-}
+  if (error) return { error: error.message };
 
-// ─── OTP Verification ─────────────────────────────────────────────────────────
-
-/**
- * Verify phone OTP sent by signUpWithPhone / signInWithPhone.
- */
-export async function verifyPhoneOtp(
-    phone: string,
-    token: string
-): Promise<AuthServiceResult> {
-    const { error } = await supabase.auth.verifyOtp({
-        phone,
-        token,
-        type: 'sms',
-    });
-
-    if (error) {
-        return { data: null, error: error.message };
-    }
-
-    return { data: null, error: null };
-}
-
-// ─── Sign-In ──────────────────────────────────────────────────────────────────
-
-/**
- * Sign in with email + password.
- */
-export async function signInWithEmail(
-    payload: SignInEmailPayload
-): Promise<AuthServiceResult> {
-    const { email, password } = payload;
-
-    const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
-        password,
-    });
-
-    if (error) {
-        return { data: null, error: error.message };
-    }
-
-    return { data: null, error: null };
+  return { error: null };
 }
 
 /**
- * Send phone OTP for sign-in.
+ * Verify phone OTP.
  */
-export async function signInWithPhone(phone: string): Promise<AuthServiceResult> {
-    const { error } = await supabase.auth.signInWithOtp({ phone });
+// export async function verifyPhoneOtp(phone: string, otp: string) {
+//   const { data, error } = await supabase.functions.invoke(
+//     "check-phone-otp",
+//     {
+//       body: { phone, code: otp },
+//     }
+//   );
 
-    if (error) {
-        return { data: null, error: error.message };
-    }
+//   if (error) return { error: error.message };
 
-    return { data: null, error: null };
-}
+//   if (!data?.verified) {
+//     return { error: "Invalid verification code" };
+//   }
 
-// ─── Sign-Out ─────────────────────────────────────────────────────────────────
+//   return { error: null };
+// }
+export async function verifyPhoneOtp(phone: string, otp: string) {
 
-export async function signOut(): Promise<AuthServiceResult> {
-    const { error } = await supabase.auth.signOut();
-
-    if (error) {
-        return { data: null, error: error.message };
-    }
-
-    return { data: null, error: null };
-}
-
-// ─── Password Reset ───────────────────────────────────────────────────────────
-
-/**
- * Send a password-reset email.
- * redirectTo should be a deep-link registered in app.json / Supabase dashboard.
- */
-export async function sendPasswordReset(email: string): Promise<AuthServiceResult> {
-    const { error } = await supabase.auth.resetPasswordForEmail(
-        email.trim().toLowerCase(),
-        { redirectTo: 'huzly://reset-password' }
+  const { data, error } =
+    await supabase.functions.invoke(
+      "check-phone-otp",
+      {
+        body: { phone, code: otp },
+      }
     );
 
-    if (error) {
-        return { data: null, error: error.message };
-    }
+  if (error) return { error: error.message };
 
-    return { data: null, error: null };
+  if (!data?.verified) {
+    return { error: "Invalid OTP" };
+  }
+
+  if (data?.session?.properties) {
+
+    await supabase.auth.setSession({
+      access_token: data.session.properties.access_token,
+      refresh_token: data.session.properties.refresh_token,
+    });
+
+  }
+
+  return { error: null };
 }
 
-// ─── Current Session / User ───────────────────────────────────────────────────
+/**
+ * Send email OTP for existing signed up user.
+ */
+export async function sendEmailOtp(email: string): Promise<{ error: string | null }> {
+  try {
+    const normalizedEmail = email.trim().toLowerCase();
 
-export async function getSession() {
-    const { data, error } = await supabase.auth.getSession();
-    return { session: data.session, error };
+    const { error } = await supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        shouldCreateUser: false,
+      },
+    });
+
+    if (error) return { error: error.message };
+    return { error: null };
+  } catch (e: any) {
+    return { error: e?.message ?? 'Failed to send email OTP' };
+  }
 }
 
-export async function getCurrentUser() {
-    const { data, error } = await supabase.auth.getUser();
-    return { user: data.user, error };
+/**
+ * Verify email OTP.
+ */
+export async function verifyEmailOtp(
+  email: string,
+  otp: string
+): Promise<{ error: string | null }> {
+  try {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const { error } = await supabase.auth.verifyOtp({
+      email: normalizedEmail,
+      token: otp,
+      type: 'email',
+    });
+
+    if (error) return { error: error.message };
+    return { error: null };
+  } catch (e: any) {
+    return { error: e?.message ?? 'Email verification failed' };
+  }
+}
+
+/**
+ * Shared resend helper for OTP screen.
+ */
+export async function resendOtp(args: {
+  phone?: string;
+  email?: string;
+  role?: Role;
+}): Promise<{ error: string | null }> {
+  if (args.phone) {
+    return sendPhoneOtp({
+      phone: args.phone,
+      role: args.role ?? 'Worker',
+    });
+  }
+
+  if (args.email) {
+    return sendEmailOtp(args.email);
+  }
+
+  return { error: 'Missing phone or email.' };
 }

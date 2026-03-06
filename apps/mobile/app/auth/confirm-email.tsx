@@ -129,9 +129,9 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     iconText: { fontSize: 24 },
-    title: { fontSize: 20, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 8, textAlign: 'center' },
+    title: { fontSize: 20, fontWeight: '600', color: TEXT_PRIMARY, marginBottom: 8, textAlign: 'center' },
     sub: { fontSize: 14, color: TEXT_SECONDARY, textAlign: 'center', lineHeight: 20 },
-    emailText: { color: TEXT_PRIMARY, fontWeight: '700' },
+    emailText: { color: TEXT_PRIMARY, fontWeight: '600' },
     hint: {
         marginTop: 12,
         fontSize: 12,
@@ -149,6 +149,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    primaryText: { color: '#fff', fontWeight: '800', fontSize: 13 },
-    backLink: { fontSize: 12, color: PRIMARY, fontWeight: '700' },
+    primaryText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+    backLink: { fontSize: 12, color: PRIMARY, fontWeight: '600' },
 });
