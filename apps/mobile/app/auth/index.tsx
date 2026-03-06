@@ -23,6 +23,14 @@ export default function AuthScreen() {
     }
   };
 
+  const handleEmployeer = () => {
+    if (mode === 'signup') {
+      router.push('/auth/worker-signup');
+    } else {
+      router.push('/auth/worker-signin');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
@@ -61,6 +69,12 @@ export default function AuthScreen() {
           <Pressable style={styles.card} onPress={handleWorker}>
             <Text style={styles.cardText}>
               {mode === 'signup' ? 'Sign-up as Worker' : 'Sign-in as Worker'}
+            </Text>
+          </Pressable>
+
+          <Pressable style={styles.card} onPress={handleEmployeer}>
+            <Text style={styles.cardText}>
+              {mode === 'signup' ? 'Sign-up as Employeer' : 'Sign-in as Employeer'}
             </Text>
           </Pressable>
         </View>
