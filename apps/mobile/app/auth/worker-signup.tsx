@@ -85,7 +85,7 @@ export default function WorkerSignUpScreen() {
         }
         // OTP sent — go to confirm-phone screen
         router.push(
-          `/auth/confirm-phone?phone=${encodeURIComponent(phoneE164)}&next=${encodeURIComponent('/onboarding-steps')}`
+          `/auth/confirm-phone?phone=${encodeURIComponent(phoneE164)}&next=${encodeURIComponent('/messaging')}`
         );
         return;
       }
@@ -106,11 +106,11 @@ export default function WorkerSignUpScreen() {
       if (data?.needsEmailConfirm) {
         // Supabase email confirmation is ON — show pending screen
         router.push(
-          `/auth/confirm-email?email=${encodeURIComponent(email.trim().toLowerCase())}&next=${encodeURIComponent('/onboarding-steps')}`
+          `/auth/confirm-email?email=${encodeURIComponent(email.trim().toLowerCase())}&next=${encodeURIComponent('/messaging')}`
         );
       } else {
         // Email confirmation disabled — user is signed in immediately
-        router.replace('/onboarding-steps');
+        router.replace('/messaging');
       }
     } finally {
       setLoading(false);
