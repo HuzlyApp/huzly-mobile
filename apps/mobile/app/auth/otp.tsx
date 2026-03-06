@@ -1,103 +1,389 @@
+// apps/mobile/app/auth/otp.tsx
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Keyboard,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { resendOtp, verifyEmailOtp, verifyPhoneOtp } from '@/lib/auth/auth.service';
 
 const BG = '#FFFFFF';
 const TEXT_PRIMARY = '#111827';
 const TEXT_SECONDARY = '#6B7280';
+const BORDER = '#D1D5DB';
 const PRIMARY = '#3B6FD8';
-const BORDER_SOFT = '#E5E7EB';
+const DISABLED_BG = '#E5E7EB';
+const BOX_BG = '#FFFFFF';
+const BOX_BG_DISABLED = '#F3F4F6';
 
-function formatUSPhoneE164ToDisplay(phoneE164: string) {
+const OTP_LEN = 6;
+const OTP_EXPIRY = 300; // 5 minutes
+const OTP_TIMER_KEY = "otp_timer_expiry";
+
+function maskPhone(phoneE164: string) {
   const digits = phoneE164.replace(/\D/g, '');
-  const ten = digits.length >= 11 ? digits.slice(1, 11) : digits.slice(0, 10);
+  const ten = digits.startsWith('63') ? digits.slice(2, 12) : digits.slice(-10);
+
+  if (ten.length !== 10) return phoneE164;
+
   const a = ten.slice(0, 3);
   const b = ten.slice(3, 6);
   const c = ten.slice(6, 10);
-  if (ten.length < 10) return phoneE164;
-  return `+1-${a}-${b}-${c}`;
+
+  return `+63-${a}-***-${c}`;
 }
 
-export default function ConfirmPhoneScreen() {
+function maskEmail(email: string) {
+  const trimmed = email.trim();
+  const [name, domain] = trimmed.split('@');
+
+  if (!name || !domain) return trimmed;
+
+  const shown = name.slice(0, 2);
+  return `${shown}***@${domain}`;
+}
+
+export default function OtpScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ phone?: string; next?: string }>();
+  const params = useLocalSearchParams<{
+    phone?: string;
+    email?: string;
+    next?: string;
+  }>();
 
-  const phoneE164 = useMemo(() => {
-    const raw = params.phone ?? '';
-    const digits = raw.replace(/\D/g, '');
-    if (digits.length === 10) return `+1${digits}`;
-    if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
-    if (raw.startsWith('+')) return raw;
-    return raw;
-  }, [params.phone]);
+  const mode = useMemo<'phone' | 'email'>(() => {
+    return params.email ? 'email' : 'phone';
+  }, [params.email]);
 
-  const phoneDisplay = useMemo(() => formatUSPhoneE164ToDisplay(phoneE164), [phoneE164]);
+  const phone = (params.phone ?? '').toString();
+  const email = (params.email ?? '').toString();
+  const next = (params.next ?? '').toString();
 
-  const [sending, setSending] = useState(false);
+  const subtitle = useMemo(() => {
+    if (mode === 'phone') {
+      return {
+        line1: `We’ve sent you the OTP on this Mobile Number`,
+        target: maskPhone(phone),
+        timerPrefix: '',
+      };
+    }
 
-  const onCancel = () => router.back();
+    return {
+      line1: `We’ve sent you the verification code on this email.`,
+      target: maskEmail(email),
+      timerPrefix: 'Get Code in ',
+    };
+  }, [mode, phone, email]);
 
-  const onContact = () => {
-    Alert.alert('Contact Us', 'TODO: Route to support or open email.');
+  const [digits, setDigits] = useState<string[]>(
+    Array.from({ length: OTP_LEN }, () => '')
+  );
+  const [secondsLeft, setSecondsLeft] = useState(OTP_EXPIRY);
+  const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const inputsRef = useRef<Array<TextInput | null>>([]);
+
+  const otp = digits.join('');
+  const isComplete = otp.length === OTP_LEN && !digits.includes('');
+  const canVerify = isComplete && !verifying;
+
+  const focusIndex = (index: number) => {
+    inputsRef.current[index]?.focus?.();
   };
 
-  const onSend = async () => {
-    if (!phoneE164) {
-      Alert.alert('Missing phone', 'Please go back and enter your phone number.');
+  const blurAll = () => {
+    inputsRef.current.forEach((input) => input?.blur?.());
+    Keyboard.dismiss();
+  };
+
+  useEffect(() => {
+
+  const initTimer = async () => {
+
+    const savedExpiry = await AsyncStorage.getItem(OTP_TIMER_KEY);
+
+    const now = Date.now();
+
+    if (savedExpiry) {
+
+      const remaining = Math.floor((parseInt(savedExpiry) - now) / 1000);
+
+      if (remaining > 0) {
+        setSecondsLeft(remaining);
+        return;
+      }
+
+    }
+
+    const newExpiry = now + OTP_EXPIRY * 1000;
+
+    await AsyncStorage.setItem(
+      OTP_TIMER_KEY,
+      newExpiry.toString()
+    );
+
+    setSecondsLeft(OTP_EXPIRY);
+
+  };
+
+  initTimer();
+
+}, [mode, phone, email]);
+
+  useEffect(() => {
+    if (secondsLeft <= 0) return;
+
+    const timer = setInterval(() => {
+      setSecondsLeft((prev) => prev - 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [secondsLeft]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => focusIndex(0), 250);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (isComplete) {
+      blurAll();
+    }
+  }, [isComplete]);
+
+  const fillFromIndex = (startIndex: number, raw: string) => {
+    const clean = raw.replace(/\D/g, '');
+    if (!clean) return;
+
+    const nextDigits = [...digits];
+    let writeAt = startIndex;
+
+    for (let i = 0; i < clean.length && writeAt < OTP_LEN; i++, writeAt++) {
+      nextDigits[writeAt] = clean[i];
+    }
+
+    setDigits(nextDigits);
+
+    const nextEmpty = nextDigits.findIndex((digit) => digit === '');
+    if (nextEmpty === -1) {
+      blurAll();
+    } else {
+      focusIndex(nextEmpty);
+    }
+  };
+
+  const handleChange = (index: number, text: string) => {
+    setError(null);
+
+    const clean = text.replace(/\D/g, '');
+
+    if (clean === '') {
+      const nextDigits = [...digits];
+      nextDigits[index] = '';
+      setDigits(nextDigits);
       return;
     }
 
-    setSending(true);
-    try {
-      // TODO: send OTP (Supabase/backend)
-      await new Promise((r) => setTimeout(r, 600));
+    if (clean.length > 1) {
+      fillFromIndex(index, clean);
+      return;
+    }
 
-      router.push({
-        pathname: '/auth/otp',
-        params: { phone: phoneE164, next: params.next ?? '' },
-      });
-    } catch {
-      Alert.alert('Error', 'Failed to send OTP. Try again.');
-    } finally {
-      setSending(false);
+    const nextDigits = [...digits];
+    nextDigits[index] = clean[0];
+    setDigits(nextDigits);
+
+    if (index < OTP_LEN - 1) {
+      focusIndex(index + 1);
+    } else {
+      blurAll();
     }
   };
+
+  const handleKeyPress = (index: number, key: string) => {
+    if (key !== 'Backspace') return;
+
+    if (digits[index] === '' && index > 0) {
+      const nextDigits = [...digits];
+      nextDigits[index - 1] = '';
+      setDigits(nextDigits);
+      focusIndex(index - 1);
+    }
+  };
+
+  const onResend = async () => {
+    if (secondsLeft > 0 || resending) return;
+
+    setError(null);
+    setResending(true);
+
+    try {
+      const { error } = await resendOtp({
+        phone: mode === 'phone' ? phone : undefined,
+        email: mode === 'email' ? email : undefined,
+        role: 'Worker',
+      });
+
+      if (error) {
+        setError(error);
+        return;
+      }
+
+      setDigits(Array.from({ length: OTP_LEN }, () => ''));
+      const newExpiry = Date.now() + OTP_EXPIRY * 1000;
+
+      await AsyncStorage.setItem(
+        OTP_TIMER_KEY,
+        newExpiry.toString()
+      );
+
+      setSecondsLeft(OTP_EXPIRY);
+
+      setTimeout(() => {
+        focusIndex(0);
+      }, 150);
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to resend OTP.');
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const onCancel = () => {
+    router.back();
+  };
+
+  const onVerify = async () => {
+    setError(null);
+    setVerifying(true);
+
+    try {
+      if (!isComplete) {
+        setError('Please enter the 6-digit code.');
+        return;
+      }
+
+      if (mode === 'phone') {
+        const { error } = await verifyPhoneOtp(phone, otp);
+        if (error) throw new Error(error);
+      } else {
+        const { error } = await verifyEmailOtp(email, otp);
+        if (error) throw new Error(error);
+      }
+
+      await AsyncStorage.removeItem(OTP_TIMER_KEY);
+      router.replace('/onboarding-steps');
+    } catch (e: any) {
+      setError(e?.message ?? 'Verification failed. Try again.');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const timerText = useMemo(() => {
+
+  const minutes = Math.floor(secondsLeft / 60);
+  const seconds = secondsLeft % 60;
+
+  const formatted =
+    `${minutes}:${String(seconds).padStart(2, '0')}`;
+
+  if (mode === 'email') {
+    return `${subtitle.timerPrefix}${formatted}`;
+  }
+
+  return formatted;
+
+}, [secondsLeft, mode, subtitle.timerPrefix]);
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        <View style={styles.card}>
-          <Text style={styles.title}>Please Confirm</Text>
-          <Text style={styles.sub}>
-            We will send you a One Time Passcode to{'\n'}
-            <Text style={styles.phone}>{phoneDisplay}</Text>
-          </Text>
+        <Text style={styles.title}>Enter Code</Text>
 
+        <Text style={styles.sub}>
+          {subtitle.line1}
+          {'\n'}
+          <Text style={styles.target}>{subtitle.target}</Text>
+        </Text>
+
+        <Text style={styles.label}>Enter 6 digit OTP</Text>
+
+        <View style={styles.otpRow}>
+          {digits.map((digit, index) => (
+            <TextInput
+              key={index}
+              ref={(ref) => {
+                inputsRef.current[index] = ref;
+              }}
+              value={digit}
+              onChangeText={(text) => handleChange(index, text)}
+              onKeyPress={({ nativeEvent }) => handleKeyPress(index, nativeEvent.key)}
+              keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
+              inputMode="numeric"
+              maxLength={Platform.OS === 'ios' ? 1 : 6}
+              textContentType="oneTimeCode"
+              autoComplete={mode === 'phone' ? 'sms-otp' : 'one-time-code'}
+              returnKeyType="done"
+              selectionColor={PRIMARY}
+              style={[
+                styles.otpBox,
+                isComplete && { backgroundColor: BOX_BG_DISABLED },
+              ]}
+            />
+          ))}
+        </View>
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        <View style={styles.timerRow}>
+          <Text style={styles.timer}>{timerText}</Text>
+
+          <Pressable onPress={onResend} disabled={secondsLeft > 0 || resending} hitSlop={8}>
+            <Text style={[styles.resend, (secondsLeft > 0 || resending) && { opacity: 0.4 }]}>
+              {resending ? 'Resending…' : 'Resend'}
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.btnRow}>
           <Pressable
-            onPress={onSend}
-            disabled={sending}
-            style={[styles.primaryBtn, sending && { opacity: 0.7 }]}
+            style={[styles.btn, styles.btnGhost]}
+            onPress={onCancel}
+            disabled={verifying}
           >
-            {sending ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <ActivityIndicator />
-                <Text style={styles.primaryText}>Sending…</Text>
-              </View>
-            ) : (
-              <Text style={styles.primaryText}>Send me the code</Text>
-            )}
+            <Text style={styles.btnGhostText}>Cancel</Text>
           </Pressable>
 
-          <View style={styles.bottomRow}>
-            <Text style={styles.small}>Not your mobile number?</Text>
-            <Pressable onPress={onContact} hitSlop={8}>
-              <Text style={styles.link}> Contact Us</Text>
-            </Pressable>
-          </View>
-
-          <Pressable onPress={onCancel} hitSlop={8} style={{ marginTop: 10 }}>
-            <Text style={styles.cancelLink}>Cancel</Text>
+          <Pressable
+            style={[
+              styles.btn,
+              styles.btnPrimary,
+              !canVerify && { backgroundColor: DISABLED_BG },
+            ]}
+            onPress={onVerify}
+            disabled={!canVerify}
+          >
+            {verifying ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator />
+                <Text style={styles.btnPrimaryText}>Verifying…</Text>
+              </View>
+            ) : (
+              <Text style={styles.btnPrimaryText}>Verify Code</Text>
+            )}
           </Pressable>
         </View>
       </View>
@@ -106,29 +392,115 @@ export default function ConfirmPhoneScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: BG },
-  container: { flex: 1, paddingHorizontal: 24, justifyContent: 'center' },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: BORDER_SOFT,
-    padding: 18,
-    backgroundColor: '#fff',
+  safe: {
+    flex: 1,
+    backgroundColor: BG,
   },
-  title: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY },
-  sub: { marginTop: 8, fontSize: 13, color: TEXT_SECONDARY, lineHeight: 18 },
-  phone: { color: TEXT_PRIMARY, fontWeight: '800' },
-  primaryBtn: {
-    marginTop: 16,
+  container: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+  },
+
+  title: {
+    fontSize: 30,
+    fontWeight: '600',
+    color: TEXT_PRIMARY,
+  },
+  sub: {
+    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 18,
+    color: TEXT_SECONDARY,
+  },
+  target: {
+    color: TEXT_PRIMARY,
+    fontWeight: '600',
+  },
+
+  label: {
+    marginTop: 18,
+    fontSize: 13,
+    color: TEXT_SECONDARY,
+    fontWeight: '600',
+  },
+
+  otpRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  otpBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '600',
+    color: TEXT_PRIMARY,
+    backgroundColor: BOX_BG,
+  },
+
+  error: {
+    marginTop: 10,
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  timerRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    alignItems: 'center',
+  },
+  timer: {
+    fontSize: 14,
+    color: TEXT_SECONDARY,
+    fontWeight: '600',
+  },
+  resend: {
+    fontSize: 14,
+    color: PRIMARY,
+    fontWeight: '600',
+  },
+
+  btnRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 18,
+  },
+  btn: {
+    flex: 1,
     height: 44,
     borderRadius: 10,
-    backgroundColor: PRIMARY,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryText: { color: '#fff', fontWeight: '800', fontSize: 13 },
-  bottomRow: { marginTop: 12, flexDirection: 'row', justifyContent: 'center' },
-  small: { fontSize: 12, color: TEXT_SECONDARY },
-  link: { fontSize: 12, color: PRIMARY, fontWeight: '800' },
-  cancelLink: { textAlign: 'center', color: TEXT_SECONDARY, fontWeight: '700' },
+  btnGhost: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  btnGhostText: {
+    color: TEXT_PRIMARY,
+    fontWeight: '600',
+  },
+
+  btnPrimary: {
+    backgroundColor: PRIMARY,
+  },
+  btnPrimaryText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
 });

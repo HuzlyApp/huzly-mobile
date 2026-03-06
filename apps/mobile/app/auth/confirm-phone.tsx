@@ -1,56 +1,40 @@
-/**
- * confirm-phone.tsx
- *
- * Confirmation screen shown before sending an OTP.
- * Calls signUpWithPhone (or signInWithPhone) to actually send the SMS.
- * Then navigates to /auth/otp to collect the code.
- *
- * URL params:
- *   - phone  : E.164 phone number (e.g. "+12025550100")
- *   - next   : Route to navigate to after successful verification
- */
+// apps/mobile/app/auth/confirm-phone.tsx
 
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { signUpWithPhone } from '@/lib/auth/auth.service';
+import { sendPhoneOtp } from '@/lib/auth/auth.service';
 
 const BG = '#FFFFFF';
-const TEXT_PRIMARY = '#111827';
-const TEXT_SECONDARY = '#6B7280';
-const PRIMARY = '#3B6FD8';
+const TEXT_PRIMARY = '#1F2937';
+const TEXT_SECONDARY = '#4B5563';
+const PRIMARY = '#4473C0';
 const BORDER_SOFT = '#E5E7EB';
 
-function formatUSPhoneE164ToDisplay(phoneE164: string) {
+function formatPHDisplay(phoneE164: string) {
   const digits = phoneE164.replace(/\D/g, '');
-  const ten = digits.length >= 11 ? digits.slice(1, 11) : digits.slice(0, 10);
+
+  if (!digits.startsWith('63') || digits.length < 12) return phoneE164;
+
+  const ten = digits.slice(2, 12);
   const a = ten.slice(0, 3);
   const b = ten.slice(3, 6);
   const c = ten.slice(6, 10);
-  if (ten.length < 10) return phoneE164;
-  return `+1-${a}-${b}-${c}`;
+
+  return `+63-${a}-${b}-${c}`;
 }
 
 export default function ConfirmPhoneScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ phone?: string; next?: string }>();
 
-  const phoneE164 = useMemo(() => {
-    const raw = params.phone ?? '';
-    const digits = raw.replace(/\D/g, '');
-    if (digits.length === 10) return `+1${digits}`;
-    if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
-    if (raw.startsWith('+')) return raw;
-    return raw;
-  }, [params.phone]);
-
-  const phoneDisplay = useMemo(() => formatUSPhoneE164ToDisplay(phoneE164), [phoneE164]);
+  const phoneE164 = useMemo(() => (params.phone ?? '').toString(), [params.phone]);
+  const next = useMemo(() => (params.next ?? '').toString(), [params.next]);
+  const phoneDisplay = useMemo(() => formatPHDisplay(phoneE164), [phoneE164]);
 
   const [sending, setSending] = useState(false);
-
-  const onCancel = () => router.back();
 
   const onContact = () => {
     Alert.alert('Contact Us', 'Please email support@huzly.com for help.');
@@ -63,19 +47,25 @@ export default function ConfirmPhoneScreen() {
     }
 
     setSending(true);
+
     try {
-      // Send OTP via Supabase phone auth
-      const { error } = await signUpWithPhone({ phone: phoneE164, role: 'worker' });
+      console.log('[CONFIRM-PHONE] phoneE164 param:', phoneE164);
+      const { error } = await sendPhoneOtp({
+        phone: phoneE164,
+        role: 'Worker',
+      });
 
       if (error) {
         Alert.alert('Error', error);
         return;
       }
 
-      // Navigate to OTP entry screen
       router.push({
         pathname: '/auth/otp',
-        params: { phone: phoneE164, next: params.next ?? '' },
+        params: {
+          phone: phoneE164,
+          next,
+        },
       });
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'Failed to send OTP. Try again.');
@@ -89,6 +79,7 @@ export default function ConfirmPhoneScreen() {
       <View style={styles.container}>
         <View style={styles.card}>
           <Text style={styles.title}>Please Confirm</Text>
+
           <Text style={styles.sub}>
             We will send you a One Time Passcode to{'\n'}
             <Text style={styles.phone}>{phoneDisplay}</Text>
@@ -100,8 +91,8 @@ export default function ConfirmPhoneScreen() {
             style={[styles.primaryBtn, sending && { opacity: 0.7 }]}
           >
             {sending ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <ActivityIndicator color="#fff" />
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color="#FFFFFF" />
                 <Text style={styles.primaryText}>Sending…</Text>
               </View>
             ) : (
@@ -115,10 +106,6 @@ export default function ConfirmPhoneScreen() {
               <Text style={styles.link}> Contact Us</Text>
             </Pressable>
           </View>
-
-          <Pressable onPress={onCancel} hitSlop={8} style={{ marginTop: 10 }}>
-            <Text style={styles.cancelLink}>Cancel</Text>
-          </Pressable>
         </View>
       </View>
     </SafeAreaView>
@@ -126,18 +113,37 @@ export default function ConfirmPhoneScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: BG },
-  container: { flex: 1, paddingHorizontal: 24, justifyContent: 'center' },
+  safe: {
+    flex: 1,
+    backgroundColor: BG,
+  },
+  container: {
+    flex: 1,
+    paddingHorizontal: 24,
+    justifyContent: 'center',
+  },
   card: {
     borderRadius: 14,
     borderWidth: 1,
     borderColor: BORDER_SOFT,
     padding: 18,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
   },
-  title: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY },
-  sub: { marginTop: 8, fontSize: 13, color: TEXT_SECONDARY, lineHeight: 18 },
-  phone: { color: TEXT_PRIMARY, fontWeight: '800' },
+  title: {
+    fontSize: 30,
+    fontWeight: '600',
+    color: TEXT_PRIMARY,
+  },
+  sub: {
+    marginTop: 8,
+    fontSize: 14,
+    color: TEXT_SECONDARY,
+    lineHeight: 18,
+  },
+  phone: {
+    color: TEXT_PRIMARY,
+    fontWeight: '400',
+  },
   primaryBtn: {
     marginTop: 16,
     height: 44,
@@ -146,9 +152,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryText: { color: '#fff', fontWeight: '800', fontSize: 13 },
-  bottomRow: { marginTop: 12, flexDirection: 'row', justifyContent: 'center' },
-  small: { fontSize: 12, color: TEXT_SECONDARY },
-  link: { fontSize: 12, color: PRIMARY, fontWeight: '800' },
-  cancelLink: { textAlign: 'center', color: TEXT_SECONDARY, fontWeight: '700' },
+  primaryText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bottomRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  small: {
+    fontSize: 12,
+    color: TEXT_SECONDARY,
+  },
+  link: {
+    fontSize: 12,
+    color: PRIMARY,
+    fontWeight: '600',
+  },
 });

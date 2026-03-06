@@ -19,7 +19,7 @@ export default function HomeScreen() {
   };
 
   const onSkip = () => {
-    router.push('/onboarding-steps');
+    router.push('/auth');
   };
 
   return (
