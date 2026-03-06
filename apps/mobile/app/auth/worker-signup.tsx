@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { sendEmailOtp, signUpWithEmail } from '@/lib/auth/auth.service';
+import { signUpWithEmail } from '@/lib/auth/auth.service';
 
 const BG = '#FFFFFF';
 const BORDER = '#CBD5E1';
@@ -129,90 +129,81 @@ export default function WorkerSignUpScreen() {
   };
 
   const onCancel = () => router.back();
+const onPrimary = async () => {
+  setErrorMsg(null);
+  setLoading(true);
 
-  const onPrimary = async () => {
-    setErrorMsg(null);
-    setLoading(true);
+  try {
+    if (!agreed) {
+      setErrorMsg('Please accept the Terms & Conditions and Privacy Policy.');
+      return;
+    }
 
-    try {
-      if (!agreed) {
-        setErrorMsg('Please accept the Terms & Conditions and Privacy Policy.');
-        return;
-      }
+    if (method === 'phone') {
+      const phoneE164 = toE164PH(phoneDigits);
 
-      if (method === 'phone') {
-        console.log('[SIGNUP] phoneDigits:', phoneDigits);
-const phoneE164 = toE164PH(phoneDigits);
-console.log('[SIGNUP] phoneE164 (MUST be +63...):', phoneE164);
-        // const phoneE164 = toE164PH(phoneDigits);
-
-        if (!phoneE164) {
-          setErrorMsg('Please enter a valid PH number.');
-          return;
-        }
-
-        router.push(
-          `/auth/confirm-phone?phone=${encodeURIComponent(phoneE164)}&next=${encodeURIComponent('/messaging')}`
-        );
-        return;
-      }
-
-      if (!fullName.trim()) {
-        setErrorMsg('Full name is required.');
-        return;
-      }
-
-      if (!email.trim()) {
-        setErrorMsg('Email is required.');
-        return;
-      }
-
-      if (pw.length < 6) {
-        setErrorMsg('Password must be at least 6 characters.');
-        return;
-      }
-
-      if (pw !== pw2) {
-        setErrorMsg('Passwords do not match.');
-        return;
-      }
-
-      const { error } = await signUpWithEmail({
-        email,
-        password: pw,
-        fullName,
-        role: 'Worker',
-      });
-
-      if (error) {
-        setErrorMsg(error);
-        return;
-      }
-
-      if (data?.needsEmailConfirm) {
-        // Supabase email confirmation is ON — show pending screen
-        router.push(
-          `/auth/confirm-email?email=${encodeURIComponent(email.trim().toLowerCase())}&next=${encodeURIComponent('/messaging')}`
-        );
-      } else {
-        // Email confirmation disabled — user is signed in immediately
-        router.replace('/messaging');
-      const { error: otpErr } = await sendEmailOtp(email);
-      if (otpErr) {
-        setErrorMsg(otpErr);
+      if (!phoneE164) {
+        setErrorMsg('Please enter a valid PH number.');
         return;
       }
 
       router.push(
-        `/auth/otp?email=${encodeURIComponent(
-          email.trim().toLowerCase()
-        )}&next=${encodeURIComponent('/onboarding-steps')}`
+        `/auth/confirm-phone?phone=${encodeURIComponent(phoneE164)}&next=${encodeURIComponent('/messaging')}`
       );
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
 
+    if (!fullName.trim()) {
+      setErrorMsg('Full name is required.');
+      return;
+    }
+
+    if (!email.trim()) {
+      setErrorMsg('Email is required.');
+      return;
+    }
+
+    if (pw.length < 6) {
+      setErrorMsg('Password must be at least 6 characters.');
+      return;
+    }
+
+    if (pw !== pw2) {
+      setErrorMsg('Passwords do not match.');
+      return;
+    }
+
+    const { error } = await signUpWithEmail({
+      email,
+      password: pw,
+      fullName,
+      role: 'worker',
+    });
+
+    if (error) {
+      setErrorMsg(error);
+      return;
+    }
+
+    // Comment out email confirmation for now - go directly to messaging
+    // const { error: otpErr } = await sendEmailOtp(email);
+    // if (otpErr) {
+    //   setErrorMsg(otpErr);
+    //   return;
+    // }
+
+    // router.push(
+    //   `/auth/otp?email=${encodeURIComponent(
+    //     email.trim().toLowerCase()
+    //   )}&next=${encodeURIComponent('/onboarding-steps')}`
+    // );
+
+    // Redirect directly to messaging after signup
+    router.replace('/messaging');
+  } finally {
+    setLoading(false);
+  }
+};
   const onSignInLink = () => router.push('/auth/worker-signin');
 
   function SocialCircle({ children }: { children: ReactNode }) {

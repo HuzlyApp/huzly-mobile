@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import type { ReactNode } from 'react';
 import React, { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -14,6 +15,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { supabase } from '@/lib/config/supabase';
 
 const BG = '#FFFFFF';
 const BORDER = '#CBD5E1';
@@ -47,6 +50,10 @@ export default function WorkerSignInScreen() {
   const [phoneFocused, setPhoneFocused] = useState(false);
   const [pwFocused, setPwFocused] = useState(false);
 
+  // auth state
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   // US only
   const country = useMemo(() => ({ dial: '+1' }), []);
 
@@ -71,18 +78,64 @@ export default function WorkerSignInScreen() {
 
   const onCancel = () => router.back();
 
-  const onPrimary = () => {
-  if (method === 'phone') {
-    if (phoneDigits.length !== 10) return;
-    router.push('/messaging');
-    return;
-  }
+  const onPrimary = async () => {
+    setErrorMsg(null);
+    setLoading(true);
 
-  const normalizedEmail = email.trim().toLowerCase();
-  if (!normalizedEmail) return;
+    try {
+      if (method === 'phone') {
+        if (phoneDigits.length !== 10) {
+          setErrorMsg('Please enter a valid phone number.');
+          return;
+        }
 
-  router.push('/messaging');
-};
+        const phoneE164 = `+1${phoneDigits}`;
+        
+        // Sign in with phone OTP
+        const { error } = await supabase.auth.signInWithOtp({
+          phone: phoneE164,
+        });
+
+        if (error) {
+          setErrorMsg(error.message);
+          return;
+        }
+
+        // Redirect to OTP verification screen
+        router.push(`/auth/confirm-phone?phone=${encodeURIComponent(phoneE164)}&next=${encodeURIComponent('/messaging')}`);
+        return;
+      }
+
+      // Email sign-in
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!normalizedEmail) {
+        setErrorMsg('Email is required.');
+        return;
+      }
+
+      if (pw.length < 6) {
+        setErrorMsg('Password must be at least 6 characters.');
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: pw,
+      });
+
+      if (error) {
+        setErrorMsg(error.message);
+        return;
+      }
+
+      // Redirect to messaging after successful login
+      router.replace('/messaging');
+    } catch (e: any) {
+      setErrorMsg(e?.message ?? 'Sign in failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onForgot = () => {
     // TODO: route to forgot password screen
@@ -99,9 +152,10 @@ export default function WorkerSignInScreen() {
   }
 
   const canSubmit = useMemo(() => {
+    if (loading) return false;
     if (method === 'phone') return phoneDigits.trim().length === 10 && agreed;
     return email.trim().length > 0 && pw.length >= 6;
-  }, [method, phoneDigits, agreed, email, pw]);
+  }, [method, phoneDigits, agreed, email, pw, loading]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -256,9 +310,16 @@ export default function WorkerSignInScreen() {
             </View>
           )}
 
+          {/* Error message */}
+          {errorMsg ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            </View>
+          ) : null}
+
           {/* Buttons row */}
           <View style={styles.btnRow}>
-            <Pressable style={styles.cancelBtn} onPress={onCancel}>
+            <Pressable style={styles.cancelBtn} onPress={onCancel} disabled={loading}>
               <Text style={styles.cancelText}>Cancel</Text>
             </Pressable>
 
@@ -267,7 +328,11 @@ export default function WorkerSignInScreen() {
               onPress={onPrimary}
               disabled={!canSubmit}
             >
-              <Text style={styles.primaryText}>Log In</Text>
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.primaryText}>Log In</Text>
+              )}
             </Pressable>
           </View>
 
@@ -528,6 +593,20 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
   linkBold: { color: TEXT_PRIMARY, fontWeight: '600' },
+
+  errorBox: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#EF4444',
+    marginBottom: 12,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#DC2626',
+  },
 
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
   cancelBtn: {

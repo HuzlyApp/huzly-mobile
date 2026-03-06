@@ -37,7 +37,8 @@ export default function RootLayout() {
       segments[0] === 'job-roles' ||
       segments[0] === 'requirements' ||
       segments[0] === 'payment-method' ||
-      segments[0] === 'acknowledgement';
+      segments[0] === 'acknowledgement' ||
+      segments[0] === 'messaging';
 
     /**
      * If user is already inside auth / welcome / onboarding
@@ -74,6 +75,9 @@ export default function RootLayout() {
 
           {/* Main App */}
           <Stack.Screen name="(tabs)" />
+
+          {/* Messaging */}
+          <Stack.Screen name="messaging" />
 
           {/* Onboarding */}
           <Stack.Screen name="onboarding-steps" />
