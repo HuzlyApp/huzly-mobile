@@ -152,9 +152,7 @@ console.log('[SIGNUP] phoneE164 (MUST be +63...):', phoneE164);
         }
 
         router.push(
-          `/auth/confirm-phone?phone=${encodeURIComponent(phoneE164)}&next=${encodeURIComponent(
-            '/onboarding-steps'
-          )}`
+          `/auth/confirm-phone?phone=${encodeURIComponent(phoneE164)}&next=${encodeURIComponent('/messaging')}`
         );
         return;
       }
@@ -191,6 +189,14 @@ console.log('[SIGNUP] phoneE164 (MUST be +63...):', phoneE164);
         return;
       }
 
+      if (data?.needsEmailConfirm) {
+        // Supabase email confirmation is ON — show pending screen
+        router.push(
+          `/auth/confirm-email?email=${encodeURIComponent(email.trim().toLowerCase())}&next=${encodeURIComponent('/messaging')}`
+        );
+      } else {
+        // Email confirmation disabled — user is signed in immediately
+        router.replace('/messaging');
       const { error: otpErr } = await sendEmailOtp(email);
       if (otpErr) {
         setErrorMsg(otpErr);

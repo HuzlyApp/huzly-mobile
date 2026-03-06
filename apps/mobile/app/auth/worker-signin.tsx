@@ -3,15 +3,15 @@ import { useRouter } from 'expo-router';
 import type { ReactNode } from 'react';
 import React, { useMemo, useState } from 'react';
 import {
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -72,26 +72,17 @@ export default function WorkerSignInScreen() {
   const onCancel = () => router.back();
 
   const onPrimary = () => {
-    const next = '/onboarding-steps'
-  
-    if (method === 'phone') {
-      const digits = phone.replace(/\D/g, '');
-      if (digits.length !== 10) return;
-  
-      const to = `+1${digits}`;
-      router.push(
-        `/auth/confirm-phone?channel=phone&to=${encodeURIComponent(to)}&next=${encodeURIComponent(next)}`
-      );
-      return;
-    }
-  
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail) return;
-  
-    router.push(
-      `/auth/confirm-email?channel=email&to=${encodeURIComponent(normalizedEmail)}&next=${encodeURIComponent(next)}`
-    );
-  };
+  if (method === 'phone') {
+    if (phoneDigits.length !== 10) return;
+    router.push('/messaging');
+    return;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) return;
+
+  router.push('/messaging');
+};
 
   const onForgot = () => {
     // TODO: route to forgot password screen
