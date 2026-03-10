@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { signUpWithEmail } from '@/lib/auth/auth.service';
+import { signUpWithEmail, sendEmailOtp } from '@/lib/auth/auth.service';
 
 const BG = '#FFFFFF';
 const BORDER = '#CBD5E1';
@@ -185,21 +185,18 @@ const onPrimary = async () => {
       return;
     }
 
-    // Comment out email confirmation for now - go directly to messaging
-    // const { error: otpErr } = await sendEmailOtp(email);
-    // if (otpErr) {
-    //   setErrorMsg(otpErr);
-    //   return;
-    // }
+    // Send email OTP for verification
+    const { error: otpErr } = await sendEmailOtp(email);
+    if (otpErr) {
+      setErrorMsg(otpErr);
+      return;
+    }
 
-    // router.push(
-    //   `/auth/otp?email=${encodeURIComponent(
-    //     email.trim().toLowerCase()
-    //   )}&next=${encodeURIComponent('/onboarding-steps')}`
-    // );
-
-    // Redirect directly to messaging after signup
-    router.replace('/messaging');
+    router.push(
+      `/auth/otp?email=${encodeURIComponent(
+        email.trim().toLowerCase()
+      )}&next=${encodeURIComponent('/onboarding-steps')}`
+    );
   } finally {
     setLoading(false);
   }

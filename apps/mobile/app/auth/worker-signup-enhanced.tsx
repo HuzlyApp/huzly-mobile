@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { signUpWithEmail, signUpWithPhone } from '@/lib/auth/auth.service';
+import { signUpWithEmail } from '@/lib/auth/auth.service';
 import { getMyProfile } from '@/lib/auth/profile.service';
 
 const BG = '#FFFFFF';
@@ -62,25 +62,40 @@ export default function WorkerSignUpScreen() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [verifyingProfile, setVerifyingProfile] = useState(false);
 
-  // US only
-  const country = useMemo(() => ({ dial: '+1' }), []);
+  // Phone helpers – Philippines (+63) to match OTP backend
+  const country = useMemo(() => ({ dial: '+63' }), []);
 
-  const onlyDigits = (s: string) => s.replace(/\D/g, '');
+  const onlyDigits = (value: string) => value.replace(/\D/g, '');
 
-  const formatLocalUS = (digits: string) => {
-    const d = digits.slice(0, 10);
+  const normalizePHLocal10 = (raw: string) => {
+    let digits = onlyDigits(raw);
+
+    if (digits.startsWith('63')) digits = digits.slice(2);
+    if (digits.startsWith('0')) digits = digits.slice(1);
+
+    return digits.slice(0, 10);
+  };
+
+  const formatLocalPH = (digits10: string) => {
+    const d = digits10.slice(0, 10);
     const a = d.slice(0, 3);
     const b = d.slice(3, 6);
     const c = d.slice(6, 10);
-    if (d.length === 0) return '';
-    if (d.length <= 3) return `${a}`;
+
+    if (!d) return '';
+    if (d.length <= 3) return a;
     if (d.length <= 6) return `${a}-${b}`;
     return `${a}-${b}-${c}`;
   };
 
+  const toE164PH = (digits10: string) => {
+    const d = normalizePHLocal10(digits10);
+    if (d.length !== 10) return '';
+    return `+63${d}`;
+  };
+
   const handlePhoneChange = (text: string) => {
-    const digits = onlyDigits(text).slice(0, 10);
-    setPhoneDigits(digits);
+    setPhoneDigits(normalizePHLocal10(text));
   };
 
   const onCancel = () => router.back();
@@ -114,13 +129,12 @@ export default function WorkerSignUpScreen() {
 
     try {
       if (method === 'phone') {
-        const phoneE164 = `+1${phoneDigits}`;
-        const { error } = await signUpWithPhone({ phone: phoneE164, role: 'worker' });
-        if (error) {
-          setErrorMsg(error);
+        const phoneE164 = toE164PH(phoneDigits);
+        if (!phoneE164) {
+          setErrorMsg('Please enter a valid phone number.');
           return;
         }
-        // OTP sent — go to confirm-phone screen
+        // Go to confirm-phone screen where OTP is actually sent via Supabase Edge Function
         router.push(
           `/auth/confirm-phone?phone=${encodeURIComponent(phoneE164)}&next=${encodeURIComponent('/onboarding-steps')}`
         );
@@ -297,7 +311,7 @@ export default function WorkerSignUpScreen() {
                 <View style={styles.inputSegment}>
                   <Text style={styles.dialText}>{country.dial}-</Text>
                   <TextInput
-                    value={formatLocalUS(phoneDigits)}
+                    value={formatLocalPH(phoneDigits)}
                     onChangeText={handlePhoneChange}
                     placeholder="___-___-____"
                     placeholderTextColor="#94A3B8"

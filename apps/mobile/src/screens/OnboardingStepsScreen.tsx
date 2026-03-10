@@ -1,10 +1,12 @@
 import { router } from "expo-router";
-import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import { OnboardingStepItem } from '@/components/Onboarding/OnboardingStepItem';
 import { ProgressCard } from '@/components/Onboarding/ProgressCard';
+import { supabase } from '@/lib/config/supabase';
 
 type OnboardingStep = {
   id: string;
@@ -65,11 +67,30 @@ const STEPS: OnboardingStep[] = [
 const PLACEHOLDER_PROGRESS_PERCENT = 15;
 
 export default function OnboardingStepsScreen() {
+  const [loggingOut, setLoggingOut] = useState(false);
   const completedSteps = STEPS.filter((step) => step.isComplete).length;
   const computedProgress =
     STEPS.length === 0 ? 0 : Math.round((completedSteps / STEPS.length) * 100);
 
   const progressPercent = PLACEHOLDER_PROGRESS_PERCENT || computedProgress;
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Logout error:', error);
+        alert('Error logging out: ' + error.message);
+      } else {
+        router.replace('/welcome');
+      }
+    } catch (err) {
+      console.error('Logout exception:', err);
+      alert('An error occurred while logging out');
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   const handleStepPress = (step: OnboardingStep) => {
     if (step.id === "add-skills-role") {
@@ -92,7 +113,7 @@ export default function OnboardingStepsScreen() {
       console.log('[Onboarding] pressed:', step.id, step.routeKey, step.title);
       return;
     }
-  
+
     console.log('Onboarding step pressed', step.routeKey);
   };
 
@@ -100,7 +121,20 @@ export default function OnboardingStepsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.headerContainer}>
-          <Text style={styles.headerTitle}>Onboarding Steps</Text>
+          <View style={styles.headerRow}>
+            <Text style={styles.headerTitle}>Onboarding Steps</Text>
+            <Pressable
+              style={[styles.logoutButton, loggingOut && styles.logoutButtonDisabled]}
+              onPress={handleLogout}
+              disabled={loggingOut}
+            >
+              {loggingOut ? (
+                <ActivityIndicator size={20} color="#6B7280" />
+              ) : (
+                <MaterialIcons name="logout" size={20} color="#6B7280" />
+              )}
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.sectionSpacing}>
@@ -136,10 +170,23 @@ const styles = StyleSheet.create({
   headerContainer: {
     marginBottom: 20,
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   headerTitle: {
     fontSize: 24,
     fontWeight: '700',
     color: TEXT_PRIMARY,
+  },
+  logoutButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  logoutButtonDisabled: {
+    opacity: 0.6,
   },
   sectionSpacing: {
     marginBottom: 24,
