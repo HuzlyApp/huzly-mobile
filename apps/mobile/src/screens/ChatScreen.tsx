@@ -15,9 +15,13 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import MessageBubble from '@/components/ui/MessageBubble';
+import MessageInput from '@/components/ui/MessageInput';
+import BottomNav from '@/components/ui/BottomNav';
+import ChatHeader from '@/components/ui/ChatHeader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -26,6 +30,11 @@ import {
   subscribeToMessages,
   type Message,
 } from '@/lib/messages/messages.service';
+import {
+  uploadMessageAttachment,
+  validateAttachment,
+  type FileLike,
+} from '@/lib/messages/attachments.service';
 import { useAuthSession } from '@/hooks/use-auth-session';
 
 const BG = '#FFFFFF';
@@ -54,6 +63,10 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [messageText, setMessageText] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  const [selectedFile, setSelectedFile] = useState<FileLike | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // ─── Load Messages ────────────────────────────────────────────────────────
 
@@ -104,26 +117,93 @@ export default function ChatScreen() {
     };
   }, [user, receiver_id, authLoading]);
 
+  // ─── Attachments ───────────────────────────────────────────────────────────
+
+  const handlePickAttachment = async () => {
+    setUploadError(null);
+
+    const result = await DocumentPicker.getDocumentAsync({
+      multiple: false,
+      copyToCacheDirectory: true,
+      type: [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'image/jpeg',
+        'image/png',
+      ],
+    });
+
+    if (result.canceled) return;
+
+    const file = result.assets[0];
+
+    const fileLike: FileLike = {
+      uri: file.uri,
+      name: file.name ?? 'attachment',
+      mimeType: file.mimeType ?? 'application/octet-stream',
+      size: file.size ?? 0,
+    };
+
+    const validationError = validateAttachment(fileLike);
+    if (validationError) {
+      setUploadError(validationError);
+      setSelectedFile(null);
+      return;
+    }
+
+    setSelectedFile(fileLike);
+  };
+
+  const handleClearAttachment = () => {
+    setSelectedFile(null);
+    setUploadError(null);
+  };
+
   // ─── Handle Send Message ──────────────────────────────────────────────────
 
   const handleSendMessage = async () => {
-    if (!messageText.trim() || !user || !receiver_id) return;
+    if (!user || !receiver_id) return;
+    if (!messageText.trim() && !selectedFile) return;
 
     const textToSend = messageText.trim();
     setMessageText('');
     setSending(true);
+    setUploadError(null);
+
+    let attachment = null;
+
+    if (selectedFile) {
+      setUploading(true);
+      const { attachment: uploaded, error: uploadErr } = await uploadMessageAttachment(
+        selectedFile,
+        user.id,
+      );
+      setUploading(false);
+
+      if (uploadErr || !uploaded) {
+        setUploadError(uploadErr ?? 'Failed to upload file.');
+        setSending(false);
+        setMessageText(textToSend);
+        return;
+      }
+
+      attachment = uploaded;
+    }
 
     const { error: sendError } = await sendMessage({
       sender_id: user.id,
       receiver_id,
       content: textToSend,
+      attachments: attachment,
     });
 
     setSending(false);
+    setSelectedFile(null);
 
     if (sendError) {
       setError(sendError);
-      setMessageText(textToSend); // Restore message on error
+      setMessageText(textToSend);
     }
   };
 
@@ -132,26 +212,7 @@ export default function ChatScreen() {
   const renderMessageItem = ({ item }: { item: Message }) => {
     const isOwn = item.sender_id === user?.id;
 
-    return (
-      <View style={[styles.messageRow, isOwn && styles.messageRowOwn]}>
-        <View
-          style={[
-            styles.messageBubble,
-            isOwn && styles.messageBubbleOwn,
-          ]}
-        >
-          <Text style={[styles.messageText, isOwn && styles.messageTextOwn]}>
-            {item.content}
-          </Text>
-          <Text style={[styles.messageTime, isOwn && styles.messageTimeOwn]}>
-            {new Date(item.sent_at).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </Text>
-        </View>
-      </View>
-    );
+    return <MessageBubble message={item} isOwn={isOwn} />;
   };
 
   // ─── Render Empty State ────────────────────────────────────────────────────
@@ -169,13 +230,7 @@ export default function ChatScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.container}>
-          <View style={styles.header}>
-            <Pressable onPress={() => router.back()}>
-              <Text style={styles.backButton}>‹ Back</Text>
-            </Pressable>
-            <Text style={styles.headerTitle}>{receiver_name || 'Chat'}</Text>
-            <View style={styles.headerSpacer} />
-          </View>
+          <ChatHeader title={receiver_name || 'Chat'} onBack={() => router.back()} onRight={() => {}} />
           {error ? (
             <View style={styles.errorBanner}>
               <Text style={styles.errorBannerText}>{error}</Text>
@@ -211,13 +266,7 @@ export default function ChatScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {/* Header */}
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()}>
-            <Text style={styles.backButton}>‹ Back</Text>
-          </Pressable>
-          <Text style={styles.headerTitle}>{receiver_name || 'Chat'}</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <ChatHeader title={receiver_name || 'Chat'} onBack={() => router.back()} onRight={() => {}} />
 
         {/* Error Banner */}
         {error ? (
@@ -239,25 +288,28 @@ export default function ChatScreen() {
         />
 
         {/* Input Area */}
-        <View style={styles.inputArea}>
-          <TextInput
-            style={styles.input}
-            placeholder="Type a message..."
-            placeholderTextColor={TEXT_SECONDARY}
-            value={messageText}
-            onChangeText={setMessageText}
-            editable={!sending}
-            multiline
-            maxLength={1000}
-          />
-          <Pressable
-            style={[styles.sendButton, !messageText.trim() && styles.sendButtonDisabled]}
-            onPress={handleSendMessage}
-            disabled={!messageText.trim() || sending}
-          >
-            <Text style={styles.sendButtonText}>{sending ? '…' : '›'}</Text>
-          </Pressable>
-        </View>
+        <MessageInput
+          value={messageText}
+          onChangeText={setMessageText}
+          onSend={handleSendMessage}
+          sending={sending}
+          onAttachPress={handlePickAttachment}
+          selectedFile={
+            selectedFile
+              ? {
+                  name: selectedFile.name,
+                  size: selectedFile.size,
+                  mimeType: selectedFile.mimeType,
+                }
+              : undefined
+          }
+          onClearAttachment={handleClearAttachment}
+          uploading={uploading}
+          uploadError={uploadError}
+        />
+
+        {/* Bottom Navigation (visual) */}
+        <BottomNav />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

@@ -6,6 +6,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 import { OnboardingStepItem } from '@/components/Onboarding/OnboardingStepItem';
 import { ProgressCard } from '@/components/Onboarding/ProgressCard';
+import BottomNav from '@/components/ui/BottomNav';
 import { supabase } from '@/lib/config/supabase';
 
 type OnboardingStep = {
@@ -153,6 +154,9 @@ export default function OnboardingStepsScreen() {
           ))}
         </View>
       </ScrollView>
+
+      {/* Bottom navigation (same as messages) */}
+      <BottomNav />
     </SafeAreaView>
   );
 }
@@ -165,7 +169,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingHorizontal: 20,
     paddingTop: 24,
-    paddingBottom: 32,
+    paddingBottom: 96,
   },
   headerContainer: {
     marginBottom: 20,

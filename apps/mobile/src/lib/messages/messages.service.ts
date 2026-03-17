@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '@/lib/config/supabase';
+import type { MessageAttachment } from './attachments.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,12 +35,14 @@ export interface Message {
   content: string;
   sent_at: string;
   read: boolean;
+  attachments?: MessageAttachment | null;
 }
 
 export interface MessagePayload {
   sender_id: string;
   receiver_id: string;
   content: string;
+  attachments?: MessageAttachment | null;
 }
 
 export interface ServiceResult<T = void> {
@@ -239,6 +242,7 @@ export async function sendMessage(payload: MessagePayload): Promise<ServiceResul
         sender_id: payload.sender_id,
         receiver_id: payload.receiver_id,
         content: payload.content,
+        attachments: payload.attachments ?? null,
       })
       .select()
       .single();
