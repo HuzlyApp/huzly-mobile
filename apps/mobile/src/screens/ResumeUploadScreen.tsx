@@ -1,21 +1,24 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import * as DocumentPicker from 'expo-document-picker';
-import { Alert, Platform } from 'react-native';
+import { Alert } from 'react-native';
 
 import { UploadDropzone } from '@/components/Upload/UploadDropzone';
 import { ALLOWED_TYPES_TEXT, getRequirementById } from '@/constants/requirements';
-import { useRequirementsUpload } from '@/stores/RequirementsUploadContext';
+import { getCurrentUserId } from '@/lib/auth/user.service';
+import { parseResumeWithGrok } from '@/lib/resume/resume-parser.service';
+import { replaceWorkerResumeInStorage } from '@/lib/resume/resume-storage.service';
+import { useRequirementsUpload, type UploadKey } from '@/stores/RequirementsUploadContext';
 
 const BACKGROUND = '#F3F4F6';
 const TEXT_PRIMARY = '#111827';
 const PRIMARY_BLUE = '#2F6BFF';
 
-export default function RequirementUploadScreen() {
+export default function ResumeUploadScreen() {
   const router = useRouter();
   const [isPicking, setIsPicking] = useState(false);
   const params = useLocalSearchParams<{ id?: string }>();
@@ -27,75 +30,17 @@ export default function RequirementUploadScreen() {
   };
 
   const handleSkip = () => {
-    // TODO: Implement dedicated skip behavior if required
     router.back();
   };
 
   const ALLOWED_MIME = ['image/png', 'image/jpeg', 'application/pdf'];
-const MAX_BYTES = 10 * 1024 * 1024;
+  const MAX_BYTES = 10 * 1024 * 1024;
 
-const showToast = (title: string, message: string) => {
-  // Simple cross-platform feedback
-  Alert.alert(title, message);
-};
-
-const handleBrowse = async () => {
-  if (!requirement?.id || isPicking) return;
-
-  setIsPicking(true);
-  try {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: Platform.OS === 'web' ? ['image/*', 'application/pdf'] : ALLOWED_MIME,
-      multiple: false,
-      copyToCacheDirectory: true,
-    });
-
-    if (result.canceled) return;
-
-    const asset = result.assets?.[0];
-    if (!asset) return;
-
-    // Validate file type (if mimeType is available)
-    if (asset.mimeType && !ALLOWED_MIME.includes(asset.mimeType)) {
-      showToast('Unsupported file', 'Only PNG, JPG, or PDF files are allowed.');
-      return;
-    }
-
-    // Validate size (if size is available)
-    if (asset.size && asset.size > MAX_BYTES) {
-      showToast('File too large', 'Maximum file size is 10MB.');
-      return;
-    }
-
-    setFile(requirement.id, {
-      name: asset.name ?? 'file',
-      uri: asset.uri,
-      mimeType: asset.mimeType,
-      sizeBytes: asset.size,
-      sizeLabel: formatBytes(asset.size) || '—',
-    });
-
-    router.replace({ pathname: '/requirements/upload-file', params: { id: requirement.id } });
-  } catch (e) {
-    showToast('Error', 'Could not open the file picker.');
-  } finally {
-    setIsPicking(false);
-  }
-};
-
-  const { setFile, files } = useRequirementsUpload();
-
-  const handleUpload = () => {
-    if (!requirement?.id) return;
-
-    const existing = files[requirement.id];
-    if (!existing?.uri) {
-      showToast('No file selected', 'Please pick a file first.');
-      return;
-    }
-
-    router.replace({ pathname: '/requirements/upload-file', params: { id: requirement.id } });
+  const showToast = (title: string, message: string) => {
+    Alert.alert(title, message);
   };
+
+  const { setFile, setResumeReviewData } = useRequirementsUpload();
 
   const formatBytes = (bytes?: number) => {
     if (!bytes || bytes <= 0) return '';
@@ -105,8 +50,87 @@ const handleBrowse = async () => {
     return `${mb.toFixed(1)}mb`;
   };
 
-  const uploadTitle =
-    requirement?.uploadTitle ?? 'Upload Requirement';
+  const handleBrowse = async () => {
+    if (isPicking) return;
+
+    setIsPicking(true);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: Platform.OS === 'web' ? ['image/*', 'application/pdf'] : ALLOWED_MIME,
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) return;
+
+      const asset = result.assets?.[0];
+      if (!asset) return;
+
+      if (asset.mimeType && !ALLOWED_MIME.includes(asset.mimeType)) {
+        showToast('Unsupported file', 'Only PNG, JPG, or PDF files are allowed.');
+        return;
+      }
+
+      if (asset.size && asset.size > MAX_BYTES) {
+        showToast('File too large', 'Maximum file size is 10MB.');
+        return;
+      }
+
+      // Store the picked file under a fixed "resume" key in the upload context
+      setFile('resume' as UploadKey, {
+        name: asset.name ?? 'resume',
+        uri: asset.uri,
+        mimeType: asset.mimeType,
+        sizeBytes: asset.size,
+        sizeLabel: formatBytes(asset.size) || '—',
+      });
+
+      // 1) Upload resume to Supabase Storage (one resume per user)
+      const { userId, error: userError } = await getCurrentUserId();
+      if (!userId || userError) {
+        showToast('Error', userError ?? 'Not authenticated.');
+        return;
+      }
+
+      const { path, error: storageError } = await replaceWorkerResumeInStorage({
+        userId,
+        file: { uri: asset.uri, name: asset.name, mimeType: asset.mimeType },
+      });
+
+      if (storageError) {
+        console.log('test-storageError',storageError)
+        showToast('Error', storageError);
+        return;
+      }
+
+      if (!path) {
+        showToast('Error', 'Could not determine uploaded resume path.');
+        return;
+      }
+
+      // 2) Call resume parser API with bucket+path (private bucket)
+      const { data, error } = await parseResumeWithGrok({
+        bucket: 'worker-onboarding',
+        path,
+      });
+
+      if (!error && data) {
+        setResumeReviewData(data);
+      }
+
+      router.replace({ pathname: '/resume-review' });
+    } catch (e) {
+      showToast('Error', 'Could not open the file picker.');
+    } finally {
+      setIsPicking(false);
+    }
+  };
+
+  const handleUpload = () => {
+    router.replace({ pathname: '/resume-review' });
+  };
+
+  const uploadTitle = 'Upload Resume';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -115,7 +139,7 @@ const handleBrowse = async () => {
           <Pressable hitSlop={8} onPress={handleBack} style={styles.headerIconButton}>
             <Ionicons name="chevron-back" size={22} color={TEXT_PRIMARY} />
           </Pressable>
-          <Text style={styles.headerTitle}>Requirements</Text>
+          <Text style={styles.headerTitle}>Resume</Text>
           <Pressable hitSlop={8} onPress={handleSkip}>
             <Text style={styles.skipText}>Skip for now</Text>
           </Pressable>

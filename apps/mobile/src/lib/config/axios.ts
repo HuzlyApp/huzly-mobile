@@ -1,9 +1,8 @@
 import axios, { type AxiosInstance } from 'axios';
 
-import { env } from '@/lib/config/env';
 
 export const apiClient: AxiosInstance = axios.create({
-  baseURL: env.apiBaseUrl,
+  baseURL: 'https://cdde-154-82-130-106.ngrok-free.app/',
   timeout: 10000,
 });
 

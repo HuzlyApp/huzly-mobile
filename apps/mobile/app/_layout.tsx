@@ -34,8 +34,10 @@ export default function RootLayout() {
       segments[0] === 'auth' ||
       segments[0] === 'welcome' ||
       segments[0] === 'onboarding-steps' ||
+      segments[0] === 'resume-upload' ||
       segments[0] === 'job-roles' ||
       segments[0] === 'requirements' ||
+      segments[0] === 'resume-review' ||
       segments[0] === 'payment-method' ||
       segments[0] === 'acknowledgement' ||
       segments[0] === 'messaging';
@@ -77,12 +79,14 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
 
           {/* Messaging */}
-          <Stack.Screen name="messaging" />
+          <Stack.Screen name="messaging" /> 
 
           {/* Onboarding */}
           <Stack.Screen name="onboarding-steps" />
           <Stack.Screen name="job-roles" />
           <Stack.Screen name="requirements" />
+          <Stack.Screen name="resume-upload" />
+          <Stack.Screen name="resume-review" />
           <Stack.Screen name="payment-method" />
           <Stack.Screen name="acknowledgement" />
 

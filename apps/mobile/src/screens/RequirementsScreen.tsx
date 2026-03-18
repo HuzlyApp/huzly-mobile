@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RequirementRow } from '@/components/Requirements/RequirementRow';
 import { useRequirementsUpload } from '@/stores/RequirementsUploadContext';
 import { REQUIREMENTS } from '@/constants/requirements';
+import { getCurrentUserId } from '@/lib/auth/user.service';
+import { clearWorkerRequirementFileFromStorageAndDb } from '@/lib/requirements/worker-requirements-storage.service';
 
 const BACKGROUND = '#F3F4F6';
 const TEXT_PRIMARY = '#000000';
@@ -85,7 +87,27 @@ export default function RequirementsScreen() {
                   }
                 };
 
-                const onRemove = () => removeFile(item.id);
+                const onRemove = () => {
+                  void (async () => {
+                    const { userId, error: userError } = await getCurrentUserId();
+                    if (userError || !userId) {
+                      Alert.alert('Error', userError ?? 'Not authenticated.');
+                      return;
+                    }
+
+                    const { error: clearError } = await clearWorkerRequirementFileFromStorageAndDb({
+                      userId,
+                      requirementId: item.id,
+                    });
+
+                    if (clearError) {
+                      Alert.alert('Error', clearError);
+                      return;
+                    }
+
+                    removeFile(item.id);
+                  })();
+                };
 
                 return (
                   <RequirementRow

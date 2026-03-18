@@ -9,16 +9,33 @@ export type UploadedFile = {
   uri?: string;
 };
 
+export type ResumeReviewData = {
+  firstName: string;
+  lastName: string;
+  address1: string;
+  address2: string;
+  city: string;
+  state: string;
+  phone: string;
+  email: string;
+  jobRole: string;
+} | null;
+
+export type UploadKey = RequirementId | 'resume';
+
 type RequirementsUploadContextValue = {
-  files: Partial<Record<RequirementId, UploadedFile>>;
-  setFile: (id: RequirementId, file: UploadedFile) => void;
-  removeFile: (id: RequirementId) => void;
+  files: Partial<Record<UploadKey, UploadedFile>>;
+  setFile: (id: UploadKey, file: UploadedFile) => void;
+  removeFile: (id: UploadKey) => void;
+  resumeReviewData: ResumeReviewData;
+  setResumeReviewData: (data: ResumeReviewData) => void;
 };
 
 const RequirementsUploadContext = createContext<RequirementsUploadContextValue | null>(null);
 
 export function RequirementsUploadProvider({ children }: { children: React.ReactNode }) {
-  const [files, setFiles] = useState<Partial<Record<RequirementId, UploadedFile>>>({});
+  const [files, setFiles] = useState<Partial<Record<UploadKey, UploadedFile>>>({});
+  const [resumeReviewData, setResumeReviewData] = useState<ResumeReviewData>(null);
 
   const value = useMemo<RequirementsUploadContextValue>(() => {
     return {
@@ -33,8 +50,10 @@ export function RequirementsUploadProvider({ children }: { children: React.React
           return next;
         });
       },
+      resumeReviewData,
+      setResumeReviewData,
     };
-  }, [files]);
+  }, [files, resumeReviewData]);
 
   return <RequirementsUploadContext.Provider value={value}>{children}</RequirementsUploadContext.Provider>;
 }

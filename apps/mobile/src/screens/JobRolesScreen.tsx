@@ -1,22 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
-import {
-  FlatList,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { advanceWorkerOnboardingStep } from '@/lib/auth/user.service';
+import {
+  fetchJobCatalog,
+  fetchWorkerCategoryRolesForCurrentWorker,
+  saveWorkerCategoryRolesForCurrentWorker,
+} from '@/lib/jobs/job-catalog.service';
 
 const BACKGROUND = '#FFFFFF';
 const CARD_BG = '#F9FAFB';
 const BORDER = '#AABEE1';
 
-const TEXT_PRIMARY = '#000000';
+const TEXT_PRIMARY = '#000';
 const TEXT_SECONDARY = '#4B5563';
 const TEXT_MUTED = '#9CA3AF';
 
@@ -37,39 +36,6 @@ type RoleCategory = {
   name: string;
   icon: keyof typeof Ionicons.glyphMap;
 };
-
-const CATEGORIES: RoleCategory[] = [
-  {
-    id: 'warehouse',
-    name: 'Warehouse & Logistics',
-    icon: 'home-outline',
-  },
-  {
-    id: 'event',
-    name: 'Event Staffing',
-    icon: 'sparkles-outline',
-  },
-  {
-    id: 'hotel',
-    name: 'Hotel & Hospitality',
-    icon: 'business-outline',
-  },
-];
-
-// Hardcoded roles for now (Supabase-ready later)
-const ROLES: Role[] = [
-  { id: 'picker_packer', name: 'Picker/Packer', categoryId: 'warehouse' },
-  { id: 'general_laborer', name: 'General Laborer', categoryId: 'warehouse' },
-  { id: 'forklift_operator', name: 'Forklift Operator', categoryId: 'warehouse' },
-
-  { id: 'server', name: 'Server', categoryId: 'event' },
-  { id: 'bartender', name: 'Bartender', categoryId: 'event' },
-  { id: 'event_setup', name: 'Event Setup Crew', categoryId: 'event' },
-
-  { id: 'housekeeping', name: 'Housekeeping', categoryId: 'hotel' },
-  { id: 'front_desk', name: 'Front Desk', categoryId: 'hotel' },
-  { id: 'kitchen_staff', name: 'Kitchen Staff', categoryId: 'hotel' },
-];
 
 type ChipProps = {
   label: string;
@@ -101,38 +67,107 @@ function Chip({ label, onRemove }: ChipProps) {
 export default function JobRolesScreen() {
   const router = useRouter();
 
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('warehouse');
-  const [selectedRoleIds, setSelectedRoleIds] = useState<Record<string, string[]>>({
-    warehouse: ['picker_packer', 'general_laborer'],
-    event: [],
-    hotel: [],
-  });
-
+  const [categories, setCategories] = useState<RoleCategory[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [selectedRoleIds, setSelectedRoleIds] = useState<Record<string, string[]>>({});
+  const [saving, setSaving] = useState(false);
   const [isRolePickerOpen, setIsRolePickerOpen] = useState(false);
+  
+  useEffect(() => {
+    let isMounted = true;
 
-  // Supabase-ready stub (NOT integrated yet)
-  // const fetchRolesFromSupabase = async () => {
-  //   // Example (you will wire your supabase client here):
-  //   // const { data, error } = await supabase.from('roles').select('*');
-  //   // if (error) throw error;
-  //   // return data;
-  // };
+    const loadData = async () => {
+      try {
+        const [{ categories: catData, roles: roleData, error: fetchError }, workerRolesResult] =
+          await Promise.all([fetchJobCatalog(), fetchWorkerCategoryRolesForCurrentWorker()]);
+
+        if (fetchError) throw new Error(fetchError);
+        if (!isMounted) return;
+
+        const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
+          'warehouse & logistics': 'home-outline',
+          'event staffing': 'sparkles-outline',
+          'hotel & hospitality': 'business-outline',
+        };
+
+        const mappedCats: RoleCategory[] =
+          catData
+            ?.filter((c) => c.active !== false)
+            .map((c) => ({
+              id: c.id,
+              name: c.name,
+              icon: iconMap[c.name.toLowerCase()] ?? 'briefcase-outline',
+            })) ?? [];
+
+        const mappedRoles: Role[] =
+          roleData
+            ?.filter((r) => r.active !== false)
+            .map((r) => ({
+              id: r.id,
+              name: r.name,
+              categoryId: r.category_id,
+            })) ?? [];
+
+        setCategories(mappedCats);
+        setRoles(mappedRoles);
+
+        // Pre-select any roles stored in worker_category_roles for this worker
+        if (!workerRolesResult.error && workerRolesResult.roles?.length && mappedRoles.length) {
+          const initialSelected: Record<string, string[]> = {};
+
+          for (const wr of workerRolesResult.roles) {
+            const match = mappedRoles.find(
+              (r) => r.categoryId === wr.job_category_id && r.name === wr.role,
+            );
+
+            if (!match) continue;
+
+            if (!initialSelected[match.categoryId]) {
+              initialSelected[match.categoryId] = [];
+            }
+            if (!initialSelected[match.categoryId].includes(match.id)) {
+              initialSelected[match.categoryId].push(match.id);
+            }
+          }
+
+          setSelectedRoleIds(initialSelected);
+        }
+
+        if (mappedCats.length > 0) {
+          setSelectedCategoryId(mappedCats[0].id);
+        }
+      } catch {
+        // keep inline error handling minimal for now
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const rolesByCategory = useMemo(() => {
     const map: Record<string, Role[]> = {};
-    for (const c of CATEGORIES) map[c.id] = [];
-    for (const role of ROLES) {
+    for (const c of categories) map[c.id] = [];
+    for (const role of roles) {
       if (!map[role.categoryId]) map[role.categoryId] = [];
       map[role.categoryId].push(role);
     }
     return map;
-  }, []);
+  }, [categories, roles]);
 
   const selectedRolesForCategory = useMemo(() => {
+    if (!selectedCategoryId) return [];
     const ids = selectedRoleIds[selectedCategoryId] ?? [];
-    const roleMap = new Map(ROLES.map((r) => [r.id, r]));
+    const roleMap = new Map(roles.map((r) => [r.id, r]));
     return ids.map((id) => roleMap.get(id)).filter(Boolean) as Role[];
-  }, [selectedCategoryId, selectedRoleIds]);
+  }, [selectedCategoryId, selectedRoleIds, roles]);
 
   const canSave = useMemo(() => {
     return Object.values(selectedRoleIds).some((arr) => (arr?.length ?? 0) > 0);
@@ -153,6 +188,7 @@ export default function JobRolesScreen() {
 
   const toggleRole = (roleId: string) => {
     setSelectedRoleIds((prev) => {
+      if (!selectedCategoryId) return prev;
       const current = prev[selectedCategoryId] ?? [];
       const exists = current.includes(roleId);
 
@@ -167,25 +203,40 @@ export default function JobRolesScreen() {
 
   const removeRole = (roleId: string) => {
     setSelectedRoleIds((prev) => {
+      if (!selectedCategoryId) return prev;
       const current = prev[selectedCategoryId] ?? [];
       return { ...prev, [selectedCategoryId]: current.filter((id) => id !== roleId) };
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!canSave) return;
 
-    // TODO: persist to store/context or api later
-    // Example:
-    // await saveSelectedRoles(selectedRoleIds);
+    setSaving(true);
+    try {
+      const { error } = await saveWorkerCategoryRolesForCurrentWorker({
+        selectedRoleIds,
+      });
 
-    // TODO: go to next onboarding step
-    // router.push('/onboarding-steps'); or router.push('/requirements') ...
+      if (error) {
+        // Could surface this in UI later
+        console.warn('Failed to save worker roles:', error);
+        return;
+      }
+
+      // Update worker onboarding progress for this step
+      await advanceWorkerOnboardingStep(2);
+
+      // Go to next onboarding step
+      router.replace('/onboarding-steps');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const activeCategory = useMemo(
-    () => CATEGORIES.find((c) => c.id === selectedCategoryId),
-    [selectedCategoryId],
+    () => categories.find((c) => c.id === selectedCategoryId),
+    [categories, selectedCategoryId],
   );
 
   return (
@@ -221,10 +272,11 @@ export default function JobRolesScreen() {
         <Text style={styles.pageSubtitle}>
           Click the job categories and you can check all the job vacancies that fits you.
         </Text>
+        {loading ? <Text style={styles.pageSubtitle}>Loading job categories…</Text> : null}
 
         {/* Categories */}
         <View style={styles.categoryList}>
-          {CATEGORIES.map((cat) => {
+          {categories.map((cat) => {
             const isActive = cat.id === selectedCategoryId;
             const checked = (selectedRoleIds[cat.id]?.length ?? 0) > 0;
 
@@ -372,11 +424,13 @@ export default function JobRolesScreen() {
               </View>
 
               <FlatList
-                data={rolesByCategory[selectedCategoryId] ?? []}
+                data={selectedCategoryId ? rolesByCategory[selectedCategoryId] ?? [] :   []}
                 keyExtractor={(item) => item.id}
                 ItemSeparatorComponent={() => <View style={styles.modalDivider} />}
                 renderItem={({ item }) => {
-                  const selected = (selectedRoleIds[selectedCategoryId] ?? []).includes(item.id);
+                  const selected = selectedCategoryId
+                    ? (selectedRoleIds[selectedCategoryId] ?? []).includes(item.id)
+                    : false;
                   return (
                     <Pressable
                       onPress={() => toggleRole(item.id)}
