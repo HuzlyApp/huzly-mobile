@@ -5,7 +5,7 @@
  * Users can select a contact to start or continue a conversation.
  */
 
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState, useEffect } from 'react';
 import {
   ActivityIndicator,
@@ -18,6 +18,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { fetchContacts, type Contact } from '@/lib/messages/messages.service';
+import {
+  fetchSupportTicketsByUser,
+  type SupportTicket,
+} from '@/lib/support/support-tickets.service';
 import { useAuthSession } from '@/hooks/use-auth-session';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -30,10 +34,12 @@ const CONTACT_HOVER = '#F3F4F6';
 
 export default function MessagingScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ ticketCreated?: string | string[] }>();
   const { session, loading: authLoading } = useAuthSession();
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,11 +60,21 @@ export default function MessagingScreen() {
       setLoading(true);
       setError(null);
 
-      const result = await fetchContacts();
-      if (result.error) {
-        setError(result.error);
+      const [contactsResult, ticketsResult] = await Promise.all([
+        fetchContacts(),
+        fetchSupportTicketsByUser(session.user.id),
+      ]);
+
+      if (contactsResult.error) {
+        setError(contactsResult.error);
       } else {
-        setContacts(result.data || []);
+        setContacts(contactsResult.data || []);
+      }
+
+      if (ticketsResult.error) {
+        setError(ticketsResult.error);
+      } else {
+        setTickets(ticketsResult.data || []);
       }
       setLoading(false);
     };
@@ -71,11 +87,21 @@ export default function MessagingScreen() {
     useCallback(() => {
       if (!authLoading && session?.user) {
         const refreshContacts = async () => {
-          const result = await fetchContacts();
-          if (result.error) {
-            setError(result.error);
+          const [contactsResult, ticketsResult] = await Promise.all([
+            fetchContacts(),
+            fetchSupportTicketsByUser(session.user.id),
+          ]);
+
+          if (contactsResult.error) {
+            setError(contactsResult.error);
           } else {
-            setContacts(result.data || []);
+            setContacts(contactsResult.data || []);
+          }
+
+          if (ticketsResult.error) {
+            setError(ticketsResult.error);
+          } else {
+            setTickets(ticketsResult.data || []);
           }
         };
         refreshContacts();
@@ -91,6 +117,10 @@ export default function MessagingScreen() {
         receiver_name: contact.company_name,
       },
     });
+  };
+
+  const handleTicketPress = (ticket: SupportTicket) => {
+    router.push(`/support/ticket/${ticket.id}`);
   };
 
   if (loading) {
@@ -112,11 +142,58 @@ export default function MessagingScreen() {
         <Text style={[styles.title, { color: textColor }]}>Messages</Text>
       </View>
 
+      {params.ticketCreated === '1' && (
+        <View style={styles.successContainer}>
+          <Text style={styles.successText}>
+            Ticket submission completed. Please wait within 24 hours for a response.
+          </Text>
+        </View>
+      )}
+
       {error && (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
+
+      <View style={styles.sectionHeader}>
+        <Text style={[styles.sectionTitle, { color: textColor }]}>Support Tickets</Text>
+      </View>
+      {tickets.length === 0 ? (
+        <View style={styles.sectionEmptyContainer}>
+          <Text style={styles.emptyText}>No tickets created yet.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={tickets}
+          renderItem={({ item }) => (
+            <Pressable
+              style={({ pressed }) => [
+                styles.ticketItem,
+                pressed && styles.ticketItemPressed,
+              ]}
+              onPress={() => handleTicketPress(item)}
+            >
+              <View style={styles.ticketContent}>
+                <Text style={[styles.ticketSubject, { color: textColor }]} numberOfLines={1}>
+                  {item.subject || 'Support Request'}
+                </Text>
+                <Text style={styles.ticketMeta}>
+                  Status: {item.status} • {new Date(item.created_at).toLocaleDateString()}
+                </Text>
+              </View>
+              <Text style={styles.contactArrow}>View</Text>
+            </Pressable>
+          )}
+          keyExtractor={(item) => item.id}
+          scrollEnabled={false}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+
+      <View style={styles.sectionHeader}>
+        <Text style={[styles.sectionTitle, { color: textColor }]}>Contacts</Text>
+      </View>
 
       {contacts.length === 0 ? (
         <View style={styles.emptyContainer}>
@@ -190,6 +267,60 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#dc2626',
     fontSize: 14,
+  },
+  successContainer: {
+    backgroundColor: '#ECFDF3',
+    borderColor: '#86EFAC',
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginTop: 10,
+    borderRadius: 8,
+  },
+  successText: {
+    color: '#166534',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  sectionEmptyContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  ticketItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+    backgroundColor: '#F8FAFC',
+  },
+  ticketItemPressed: {
+    backgroundColor: '#F1F5F9',
+  },
+  ticketContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  ticketSubject: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  ticketMeta: {
+    fontSize: 12,
+    color: TEXT_SECONDARY,
   },
   emptyContainer: {
     flex: 1,

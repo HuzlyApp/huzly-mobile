@@ -40,7 +40,8 @@ export default function RootLayout() {
       segments[0] === 'resume-review' ||
       segments[0] === 'payment-method' ||
       segments[0] === 'acknowledgement' ||
-      segments[0] === 'messaging';
+      segments[0] === 'messaging' ||
+      segments[0] === 'support';
 
     /**
      * If user is already inside auth / welcome / onboarding
@@ -80,6 +81,7 @@ export default function RootLayout() {
 
           {/* Messaging */}
           <Stack.Screen name="messaging" /> 
+          <Stack.Screen name="support" />
 
           {/* Onboarding */}
           <Stack.Screen name="onboarding-steps" />

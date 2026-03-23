@@ -11,13 +11,18 @@ import {
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import { Controller, useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 import MessageBubble from '@/components/ui/MessageBubble';
 import MessageInput from '@/components/ui/MessageInput';
 import BottomNav from '@/components/ui/BottomNav';
@@ -36,6 +41,7 @@ import {
   type FileLike,
 } from '@/lib/messages/attachments.service';
 import { useAuthSession } from '@/hooks/use-auth-session';
+import { createSupportTicket } from '@/lib/support/support-tickets.service';
 
 const BG = '#FFFFFF';
 const PRIMARY = '#3B6FD8';
@@ -44,6 +50,14 @@ const TEXT_SECONDARY = '#6B7280';
 const BORDER = '#E5E7EB';
 const MESSAGE_BG = '#E7F1FF';
 const RECEIVED_BG = '#F3F4F6';
+const MODAL_OVERLAY = 'rgba(17, 24, 39, 0.45)';
+
+const createTicketSchema = z.object({
+  subject: z.string().trim().min(1, 'Topic / Subject is required'),
+  description: z.string().trim().min(1, 'Message / Description is required'),
+});
+
+type CreateTicketFormValues = z.infer<typeof createTicketSchema>;
 
 interface AuthUser {
   id: string;
@@ -67,6 +81,22 @@ export default function ChatScreen() {
   const [selectedFile, setSelectedFile] = useState<FileLike | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [ticketModalVisible, setTicketModalVisible] = useState(false);
+  const [ticketSubmitError, setTicketSubmitError] = useState<string | null>(null);
+  const [submittingTicket, setSubmittingTicket] = useState(false);
+
+  const {
+    control,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<CreateTicketFormValues>({
+    resolver: zodResolver(createTicketSchema),
+    defaultValues: {
+      subject: '',
+      description: '',
+    },
+  });
 
   // ─── Load Messages ────────────────────────────────────────────────────────
 
@@ -158,6 +188,40 @@ export default function ChatScreen() {
   const handleClearAttachment = () => {
     setSelectedFile(null);
     setUploadError(null);
+  };
+
+  const handleOpenTicketModal = () => {
+    setTicketSubmitError(null);
+    setTicketModalVisible(true);
+  };
+
+  const handleCloseTicketModal = () => {
+    setTicketModalVisible(false);
+    setTicketSubmitError(null);
+    reset();
+  };
+
+  const onSubmitTicket = async (values: CreateTicketFormValues) => {
+    if (!user) return;
+
+    setSubmittingTicket(true);
+    setTicketSubmitError(null);
+
+    const { data, error: createError } = await createSupportTicket({
+      userId: user.id,
+      subject: values.subject.trim(),
+      description: values.description.trim(),
+    });
+
+    setSubmittingTicket(false);
+
+    if (createError || !data) {
+      setTicketSubmitError(createError ?? 'Failed to submit ticket.');
+      return;
+    }
+
+    handleCloseTicketModal();
+    router.push(`/support/ticket/${data.id}`);
   };
 
   // ─── Handle Send Message ──────────────────────────────────────────────────
@@ -268,6 +332,15 @@ export default function ChatScreen() {
         {/* Header */}
         <ChatHeader title={receiver_name || 'Chat'} onBack={() => router.back()} onRight={() => {}} />
 
+        <View style={styles.ticketCtaContainer}>
+          <Pressable
+            style={({ pressed }) => [styles.ticketCtaButton, pressed && styles.ticketCtaButtonPressed]}
+            onPress={handleOpenTicketModal}
+          >
+            <Text style={styles.ticketCtaButtonText}>Create Ticket</Text>
+          </Pressable>
+        </View>
+
         {/* Error Banner */}
         {error ? (
           <View style={styles.errorBanner}>
@@ -311,6 +384,83 @@ export default function ChatScreen() {
         {/* Bottom Navigation (visual) */}
         <BottomNav />
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={ticketModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={handleCloseTicketModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Create Support Ticket</Text>
+            <Text style={styles.modalSubtitle}>Tell us what you need help with.</Text>
+
+            <Controller
+              control={control}
+              name="subject"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <View style={styles.formField}>
+                  <Text style={styles.formLabel}>Topic / Subject</Text>
+                  <TextInput
+                    value={value}
+                    onChangeText={onChange}
+                    onBlur={onBlur}
+                    style={[styles.formInput, errors.subject ? styles.formInputError : null]}
+                    placeholder="Brief summary of your issue"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                  {errors.subject ? <Text style={styles.errorTextInline}>{errors.subject.message}</Text> : null}
+                </View>
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="description"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <View style={styles.formField}>
+                  <Text style={styles.formLabel}>Message / Description</Text>
+                  <TextInput
+                    value={value}
+                    onChangeText={onChange}
+                    onBlur={onBlur}
+                    style={[styles.formInput, styles.formTextarea, errors.description ? styles.formInputError : null]}
+                    placeholder="Describe your request in detail"
+                    placeholderTextColor="#9CA3AF"
+                    multiline
+                    textAlignVertical="top"
+                  />
+                  {errors.description ? (
+                    <Text style={styles.errorTextInline}>{errors.description.message}</Text>
+                  ) : null}
+                </View>
+              )}
+            />
+
+            {ticketSubmitError ? <Text style={styles.errorBannerText}>{ticketSubmitError}</Text> : null}
+
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalSecondaryBtn} onPress={handleCloseTicketModal}>
+                <Text style={styles.modalSecondaryBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalPrimaryBtn,
+                  pressed && styles.modalPrimaryBtnPressed,
+                  submittingTicket && styles.modalPrimaryBtnDisabled,
+                ]}
+                onPress={handleSubmit(onSubmitTicket)}
+                disabled={submittingTicket}
+              >
+                <Text style={styles.modalPrimaryBtnText}>
+                  {submittingTicket ? 'Submitting...' : 'Submit Ticket'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -320,6 +470,27 @@ const styles = StyleSheet.create({
 
   safe: { flex: 1, backgroundColor: BG },
   container: { flex: 1, backgroundColor: BG },
+  ticketCtaContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+    alignItems: 'flex-end',
+  },
+  ticketCtaButton: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  ticketCtaButtonPressed: {
+    opacity: 0.8,
+  },
+  ticketCtaButtonText: {
+    color: PRIMARY,
+    fontSize: 13,
+    fontWeight: '700',
+  },
 
   // ─── Header ───────────────────────────────────────────────────────────────
 
@@ -431,6 +602,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#DC2626',
   },
+  errorTextInline: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#DC2626',
+  },
 
   // ─── Input Area ───────────────────────────────────────────────────────────
 
@@ -470,5 +646,86 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 24,
     fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: MODAL_OVERLAY,
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+  },
+  modalSubtitle: {
+    marginTop: 4,
+    marginBottom: 12,
+    fontSize: 13,
+    color: TEXT_SECONDARY,
+  },
+  formField: {
+    marginBottom: 12,
+  },
+  formLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: TEXT_PRIMARY,
+    marginBottom: 6,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: TEXT_PRIMARY,
+    backgroundColor: '#FFFFFF',
+  },
+  formTextarea: {
+    minHeight: 110,
+  },
+  formInputError: {
+    borderColor: '#EF4444',
+  },
+  modalActions: {
+    marginTop: 6,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  modalSecondaryBtn: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  modalSecondaryBtnText: {
+    color: TEXT_SECONDARY,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  modalPrimaryBtn: {
+    borderRadius: 10,
+    backgroundColor: PRIMARY,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  modalPrimaryBtnPressed: {
+    opacity: 0.9,
+  },
+  modalPrimaryBtnDisabled: {
+    opacity: 0.7,
+  },
+  modalPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
   },
 });
