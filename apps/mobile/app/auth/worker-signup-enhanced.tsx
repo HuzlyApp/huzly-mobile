@@ -112,7 +112,7 @@ export default function WorkerSignUpScreen() {
       }
 
       // Success: profile verified
-      router.replace(redirectTo);
+      router.replace(redirectTo as any);
       return true;
     } catch (err) {
       console.error('[signup] Profile verification error:', err);

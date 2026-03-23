@@ -7,6 +7,7 @@ type OnboardingStepItemProps = {
   title: string;
   subtitle: string;
   onPress: () => void;
+  isComplete?: boolean;
 };
 
 const BORDER_BLUE = '#C7D7FF';
@@ -15,7 +16,7 @@ const TEXT_PRIMARY = '#111827';
 const TEXT_SECONDARY = '#6B7280';
 const CARD_BACKGROUND = '#FFFFFF';
 
-export function OnboardingStepItem({ index, title, subtitle, onPress }: OnboardingStepItemProps) {
+export function OnboardingStepItem({ index, title, subtitle, onPress, isComplete }: OnboardingStepItemProps) {
   const renderStyle = ({ pressed }: { pressed: boolean }): (ViewStyle | undefined)[] => [
     styles.container,
     pressed ? styles.containerPressed : undefined,
@@ -28,8 +29,12 @@ export function OnboardingStepItem({ index, title, subtitle, onPress }: Onboardi
       style={renderStyle}
     >
       <View style={styles.row}>
-        <View style={styles.circle}>
-          <Text style={styles.circleText}>{index}</Text>
+        <View style={[styles.circle, isComplete && styles.circleComplete]}>
+          {isComplete ? (
+            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+          ) : (
+            <Text style={styles.circleText}>{index}</Text>
+          )}
         </View>
 
         <View style={styles.textContainer}>
@@ -71,6 +76,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+  },
+  circleComplete: {
+    borderColor: PRIMARY_BLUE,
+    color: '#ffffff',
+    backgroundColor: PRIMARY_BLUE,
   },
   circleText: {
     fontSize: 14,

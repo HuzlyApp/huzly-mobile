@@ -1,12 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RequirementRow } from '@/components/Requirements/RequirementRow';
 import { useRequirementsUpload } from '@/stores/RequirementsUploadContext';
 import { REQUIREMENTS } from '@/constants/requirements';
+import { getCurrentUserId } from '@/lib/auth/user.service';
+import {
+  clearWorkerRequirementFileFromStorageAndDb,
+  uploadWorkerRequirementFileToStorageAndDb,
+} from '@/lib/requirements/worker-requirements-storage.service';
 
 const BACKGROUND = '#F3F4F6';
 const TEXT_PRIMARY = '#000000';
@@ -18,6 +23,7 @@ const INFO_BACKGROUND = '#F8FAFC';
 export default function RequirementsScreen() {
   const router = useRouter();
   const { files, removeFile } = useRequirementsUpload();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleBack = () => {
     router.back();
@@ -36,9 +42,39 @@ export default function RequirementsScreen() {
   // };
 
   const handleSubmit = () => {
-    // TODO: Implement submit behavior when backend is ready
-    // eslint-disable-next-line no-console
-    console.log('Submit requirements');
+    void (async () => {
+      if (isSubmitting) return;
+      setIsSubmitting(true);
+
+      try {
+        const { userId, error: userError } = await getCurrentUserId();
+        if (userError || !userId) {
+          Alert.alert('Error', userError ?? 'Not authenticated.');
+          return;
+        }
+
+        // Upload any selected files from context to storage + DB.
+        for (const req of REQUIREMENTS) {
+          const pickedFile = files[req.id];
+          if (!pickedFile || !pickedFile.uri) continue;
+
+          const { error: uploadError } = await uploadWorkerRequirementFileToStorageAndDb({
+            userId,
+            requirementId: req.id,
+            file: { uri: pickedFile.uri, name: pickedFile.name ?? null, mimeType: pickedFile.mimeType ?? null },
+          });
+
+          if (uploadError) {
+            Alert.alert('Upload failed', uploadError);
+            return;
+          }
+        }
+
+        router.back();
+      } finally {
+        setIsSubmitting(false);
+      }
+    })();
   };
 
   
@@ -85,7 +121,27 @@ export default function RequirementsScreen() {
                   }
                 };
 
-                const onRemove = () => removeFile(item.id);
+                const onRemove = () => {
+                  void (async () => {
+                    const { userId, error: userError } = await getCurrentUserId();
+                    if (userError || !userId) {
+                      Alert.alert('Error', userError ?? 'Not authenticated.');
+                      return;
+                    }
+
+                    const { error: clearError } = await clearWorkerRequirementFileFromStorageAndDb({
+                      userId,
+                      requirementId: item.id,
+                    });
+
+                    if (clearError) {
+                      Alert.alert('Error', clearError);
+                      return;
+                    }
+
+                    removeFile(item.id);
+                  })();
+                };
 
                 return (
                   <RequirementRow
@@ -124,7 +180,8 @@ export default function RequirementsScreen() {
           </Pressable>
           <Pressable
             style={[styles.footerButton, styles.footerButtonPrimary]}
-            onPress={handleSubmit}>
+            onPress={handleSubmit}
+            disabled={isSubmitting}>
             <Text style={[styles.footerButtonText, styles.footerButtonTextPrimary]}>Submit</Text>
           </Pressable>
         </View>

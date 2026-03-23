@@ -1,8 +1,10 @@
 import { AntDesign, FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { supabase } from '@/lib/config/supabase';
 
 const BG = '#F3F4F6';
 const PRIMARY = '#2F6BFF';
@@ -14,6 +16,26 @@ const BORDER_SOFT = '#E5E7EB';
 export default function AuthScreen() {
   const router = useRouter();
   const [mode, setMode] = useState<'signup' | 'signin'>('signup');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (!isMounted || error) return;
+
+      if (data.session) {
+        // Already signed in → go to main tabs layout
+        router.replace('/onboarding-steps');
+      }
+    };
+
+    checkSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
 
   const handleWorker = () => {
     if (mode === 'signup') {

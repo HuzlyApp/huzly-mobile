@@ -16,6 +16,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { resendOtp, verifyEmailOtp, verifyPhoneOtp } from '@/lib/auth/auth.service';
+import { USER_ROLE } from '@/lib/auth/constants';
+import { upsertCurrentUserRow } from '@/lib/auth/user.service';
 
 const BG = '#FFFFFF';
 const TEXT_PRIMARY = '#111827';
@@ -281,6 +283,14 @@ export default function OtpScreen() {
       } else {
         const { error } = await verifyEmailOtp(email, otp);
         if (error) throw new Error(error);
+      }
+
+      const { error: upsertError } = await upsertCurrentUserRow({
+        role: USER_ROLE.WORKER,
+      });
+
+      if (upsertError && upsertError !== 'null' && upsertError !== null) {
+        throw new Error(upsertError ?? 'Failed to upsert user');
       }
 
       await AsyncStorage.removeItem(OTP_TIMER_KEY);

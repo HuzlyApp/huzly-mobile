@@ -1,12 +1,13 @@
+import { MaterialIcons } from '@expo/vector-icons';
 import { router } from "expo-router";
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
 
 import { OnboardingStepItem } from '@/components/Onboarding/OnboardingStepItem';
 import { ProgressCard } from '@/components/Onboarding/ProgressCard';
 import BottomNav from '@/components/ui/BottomNav';
+import { getWorkerOnboardingStep } from '@/lib/auth/user.service';
 import { supabase } from '@/lib/config/supabase';
 
 type OnboardingStep = {
@@ -22,10 +23,10 @@ const TEXT_PRIMARY = '#111827';
 
 const STEPS: OnboardingStep[] = [
   {
-    id: 'upload-resume',
+    id: 'resume-upload',
     title: 'Upload Resume',
     subtitle: 'Configure your digital profile.',
-    routeKey: 'upload-resume',
+    routeKey: 'resume-upload',
     isComplete: false,
   },
   {
@@ -69,11 +70,29 @@ const PLACEHOLDER_PROGRESS_PERCENT = 15;
 
 export default function OnboardingStepsScreen() {
   const [loggingOut, setLoggingOut] = useState(false);
-  const completedSteps = STEPS.filter((step) => step.isComplete).length;
+  const [onboardingStep, setOnboardingStep] = useState<number>(0);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadStep = async () => {
+      const { step } = await getWorkerOnboardingStep();
+      if (!isMounted) return;
+      setOnboardingStep(step);
+    };
+
+    loadStep();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const completedSteps = Math.min(onboardingStep, STEPS.length);
   const computedProgress =
     STEPS.length === 0 ? 0 : Math.round((completedSteps / STEPS.length) * 100);
 
-  const progressPercent = PLACEHOLDER_PROGRESS_PERCENT || computedProgress;
+  const progressPercent = computedProgress;
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -94,28 +113,28 @@ export default function OnboardingStepsScreen() {
   };
 
   const handleStepPress = (step: OnboardingStep) => {
-    if (step.id === "add-skills-role") {
-      router.push({ pathname: '/job-roles' });
-      console.log('[Onboarding] pressed:', step.id, step.routeKey, step.title);
-      return;
-    }
-    if (step.id === "upload-requirements") {
-      router.push({ pathname: '/requirements' });
-      console.log('[Onboarding] pressed:', step.id, step.routeKey, step.title);
-      return;
-    }
-    if (step.id === "acknowledgement") {
-      router.push({ pathname: '/acknowledgement' });
-      console.log('[Onboarding] pressed:', step.id, step.routeKey, step.title);
-      return;
-    }
-    if (step.id === "setup-payment-method") {
-      router.push({ pathname: '/payment-method' });
-      console.log('[Onboarding] pressed:', step.id, step.routeKey, step.title);
-      return;
+    switch (step.id) {
+      case 'resume-upload':
+        router.push({ pathname: '/resume-upload' });
+        break;
+      case 'add-skills-role':
+        router.push({ pathname: '/job-roles' });
+        break;
+      case 'upload-requirements':
+        router.push({ pathname: '/requirements' });
+        break;
+      case 'acknowledgement':
+        router.push({ pathname: '/acknowledgement' });
+        break;
+      case 'setup-payment-method':
+        router.push({ pathname: '/payment-method' });
+        break;
+      default:
+        console.log('Onboarding step pressed', step.routeKey);
+        return;
     }
 
-    console.log('Onboarding step pressed', step.routeKey);
+    console.log('[Onboarding] pressed:', step.id, step.routeKey, step.title);
   };
 
   return (
@@ -149,6 +168,7 @@ export default function OnboardingStepsScreen() {
               index={index + 1}
               title={step.title}
               subtitle={step.subtitle}
+              isComplete={index + 1 <= onboardingStep}
               onPress={() => handleStepPress(step)}
             />
           ))}
