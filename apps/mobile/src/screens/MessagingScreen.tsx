@@ -18,6 +18,7 @@ import {
   type SupportTicket,
 } from '@/lib/support/support-tickets.service';
 import { useAuthSession } from '@/hooks/use-auth-session';
+import BottomNav from '@/components/ui/BottomNav';
 
 const BG = '#FFFFFF';
 const SURFACE = '#F8FAFC';
@@ -135,6 +136,7 @@ export default function MessagingScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={TEAL} />
         </View>
+        <BottomNav active="message" />
       </SafeAreaView>
     );
   }
@@ -236,6 +238,8 @@ export default function MessagingScreen() {
 
         <View style={{ height: 24 }} />
       </ScrollView>
+
+      <BottomNav active="message" />
     </SafeAreaView>
   );
 }
