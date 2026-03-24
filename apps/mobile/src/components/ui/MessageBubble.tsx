@@ -1,9 +1,11 @@
 import React from 'react';
 import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { Message } from '@/lib/messages/messages.service';
 
-const SENT_BG = '#0D9488';
-const RECEIVED_BG = '#F1F5F9';
+const RECEIVED_BG = '#ECF1F9';
+const GRADIENT_START = '#4473C0';
+const GRADIENT_END = '#2DD4BF';
 
 interface Props {
   message: Message;
@@ -19,54 +21,71 @@ export default function MessageBubble({ message, isOwn }: Props) {
     Linking.openURL(attachment.fileUrl).catch(() => {});
   };
 
+  const bubbleContent = (
+    <>
+      {message.content ? (
+        <Text style={[styles.text, isOwn && styles.textOwn]}>{message.content}</Text>
+      ) : null}
+
+      {attachment ? (
+        <Pressable
+          style={[
+            styles.attachmentContainer,
+            isOwn ? styles.attachmentContainerOwn : styles.attachmentContainerOther,
+          ]}
+          onPress={handleOpenAttachment}
+        >
+          {isImage ? (
+            <Image
+              source={{ uri: attachment.fileUrl }}
+              style={styles.attachmentImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.attachmentIconBox}>
+              <Text style={styles.attachmentIconText}>DOC</Text>
+            </View>
+          )}
+          <View style={styles.attachmentMeta}>
+            <Text
+              style={[styles.attachmentName, isOwn && styles.attachmentNameOwn]}
+              numberOfLines={1}
+            >
+              {attachment.fileName}
+            </Text>
+            <Text style={[styles.attachmentSize, isOwn && { color: 'rgba(255,255,255,0.7)' }]}>
+              {Math.round((attachment.fileSize ?? 0) / 1024)} KB
+            </Text>
+            <Text style={[styles.attachmentHint, isOwn && { color: 'rgba(255,255,255,0.7)' }]}>Tap to open</Text>
+          </View>
+        </Pressable>
+      ) : null}
+
+      <Text style={[styles.time, isOwn && styles.timeOwn]}>
+        {new Date(message.sent_at).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        })}
+      </Text>
+    </>
+  );
+
   return (
     <View style={[styles.row, isOwn && styles.rowOwn]}>
-      <View style={[styles.bubble, isOwn ? styles.bubbleSent : styles.bubbleReceived]}>
-        {message.content ? (
-          <Text style={[styles.text, isOwn && styles.textOwn]}>{message.content}</Text>
-        ) : null}
-
-        {attachment ? (
-          <Pressable
-            style={[
-              styles.attachmentContainer,
-              isOwn ? styles.attachmentContainerOwn : styles.attachmentContainerOther,
-            ]}
-            onPress={handleOpenAttachment}
-          >
-            {isImage ? (
-              <Image
-                source={{ uri: attachment.fileUrl }}
-                style={styles.attachmentImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.attachmentIconBox}>
-                <Text style={styles.attachmentIconText}>DOC</Text>
-              </View>
-            )}
-            <View style={styles.attachmentMeta}>
-              <Text
-                style={[styles.attachmentName, isOwn && styles.attachmentNameOwn]}
-                numberOfLines={1}
-              >
-                {attachment.fileName}
-              </Text>
-              <Text style={[styles.attachmentSize, isOwn && { color: 'rgba(255,255,255,0.7)' }]}>
-                {Math.round((attachment.fileSize ?? 0) / 1024)} KB
-              </Text>
-              <Text style={[styles.attachmentHint, isOwn && { color: 'rgba(255,255,255,0.7)' }]}>Tap to open</Text>
-            </View>
-          </Pressable>
-        ) : null}
-
-        <Text style={[styles.time, isOwn && styles.timeOwn]}>
-          {new Date(message.sent_at).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </Text>
-      </View>
+      {isOwn ? (
+        <LinearGradient
+          colors={[GRADIENT_START, GRADIENT_END]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.bubble, styles.bubbleSent]}
+        >
+          {bubbleContent}
+        </LinearGradient>
+      ) : (
+        <View style={[styles.bubble, styles.bubbleReceived]}>
+          {bubbleContent}
+        </View>
+      )}
     </View>
   );
 }
@@ -88,7 +107,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   bubbleSent: {
-    backgroundColor: SENT_BG,
     borderBottomRightRadius: 4,
   },
   bubbleReceived: {
@@ -123,7 +141,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
   attachmentContainerOther: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#DAE2F0',
   },
   attachmentImage: {
     width: 80,
