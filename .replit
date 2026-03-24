@@ -37,3 +37,9 @@ externalPort = 80
 deploymentTarget = "static"
 build = ["bash", "-c", "cd apps/mobile && npx expo export --platform web"]
 publicDir = "apps/mobile/dist"
+
+[userenv]
+
+[userenv.shared]
+EXPO_PUBLIC_SUPABASE_URL = "https://hfjfxbhawzzylftvfdod.supabase.co"
+EXPO_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmamZ4Ymhhd3p6eWxmdHZmZG9kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxOTAxMTUsImV4cCI6MjA4NDc2NjExNX0.o6NvG650oIbwbUPymvcFqmAPBgiTFEznwNmL8twjTjQ"
