@@ -17,7 +17,7 @@ export default function BottomNav({ active = 'message' }: Props) {
     { name: 'explore', icon: 'paper-plane', label: 'Browse', route: '/explore' },
     { name: 'jobs', icon: 'briefcase', label: 'My Jobs', route: '/job-roles' },
     { name: 'message', icon: 'chatbubble', label: 'Message', route: '/messaging' },
-    { name: 'profile', icon: 'person', label: 'Profile', route: '/settings' },
+    { name: 'profile', icon: 'person', label: 'Profile', route: '/profile' },
   ];
 
   return (

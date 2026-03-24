@@ -41,7 +41,10 @@ export default function RootLayout() {
       segments[0] === 'payment-method' ||
       segments[0] === 'acknowledgement' ||
       segments[0] === 'messaging' ||
-      segments[0] === 'support';
+      segments[0] === 'support' ||
+      segments[0] === 'profile' ||
+      segments[0] === 'profile-menu' ||
+      segments[0] === 'help-centre';
 
     /**
      * If user is already inside auth / welcome / onboarding
@@ -82,6 +85,11 @@ export default function RootLayout() {
           {/* Messaging */}
           <Stack.Screen name="messaging" /> 
           <Stack.Screen name="support" />
+
+          {/* Profile */}
+          <Stack.Screen name="profile" />
+          <Stack.Screen name="profile-menu" />
+          <Stack.Screen name="help-centre" />
 
           {/* Onboarding */}
           <Stack.Screen name="onboarding-steps" />
