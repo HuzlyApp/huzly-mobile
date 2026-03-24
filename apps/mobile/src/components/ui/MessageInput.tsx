@@ -1,9 +1,8 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Image } from 'react-native';
-const ClipIcon = require('../../../assets/images/clip.png');
-const EmojiIcon = require('../../../assets/images/emoji.png');
-const SendIcon = require('../../../assets/images/send.png');
+import { Ionicons } from '@expo/vector-icons';
+
+const TEAL = '#0D9488';
 
 type SelectedFile = {
   name: string;
@@ -39,11 +38,9 @@ export default function MessageInput({
   return (
     <View style={styles.container}>
       <Pressable style={styles.iconButton} onPress={onAttachPress} accessibilityLabel="Attach">
-        <Image source={ClipIcon} style={{ width: 20, height: 20 }} />
+        <Ionicons name="attach" size={22} color="#94A3B8" />
       </Pressable>
-      <Pressable style={styles.iconButton} onPress={() => {}} accessibilityLabel="Emoji">
-        <Image source={EmojiIcon} style={{ width: 20, height: 20 }} />
-      </Pressable>
+
       <View style={styles.inputWrapper}>
         {selectedFile ? (
           <View style={styles.attachmentChip}>
@@ -57,18 +54,19 @@ export default function MessageInput({
         ) : null}
         <TextInput
           style={styles.input}
-          placeholder="Type a message..."
-          placeholderTextColor="#6B7280"
+          placeholder="Write a message..."
+          placeholderTextColor="#94A3B8"
           value={value}
           onChangeText={onChangeText}
           multiline
         />
         {uploading ? (
-          <Text style={styles.statusText}>Uploading attachment…</Text>
+          <Text style={styles.statusText}>Uploading…</Text>
         ) : uploadError ? (
           <Text style={[styles.statusText, styles.statusError]}>{uploadError}</Text>
         ) : null}
       </View>
+
       <Pressable
         style={[styles.sendButton, disabled && styles.sendDisabled]}
         onPress={onSend}
@@ -78,7 +76,7 @@ export default function MessageInput({
         {sending || uploading ? (
           <Text style={styles.sendText}>…</Text>
         ) : (
-          <Image source={SendIcon} style={{ width: 18, height: 18 }} />
+          <Ionicons name="send" size={18} color="#FFFFFF" />
         )}
       </Pressable>
     </View>
@@ -92,7 +90,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: '#E6EEF6',
     backgroundColor: '#FFFFFF',
   },
   iconButton: {
@@ -101,34 +99,38 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginRight: 4,
   },
-  icon: { fontSize: 18 },
   inputWrapper: {
     flex: 1,
   },
   input: {
-    flex: 1,
     minHeight: 40,
     maxHeight: 120,
     borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     fontSize: 14,
-    color: '#111827',
+    color: '#1E293B',
     marginRight: 8,
   },
   sendButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#3B6FD8',
+    backgroundColor: TEAL,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  sendDisabled: { opacity: 0.5 },
-  sendText: { color: '#FFFFFF', fontSize: 22, fontWeight: '600' },
+  sendDisabled: {
+    opacity: 0.5,
+  },
+  sendText: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '600',
+  },
   attachmentChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -137,22 +139,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
-    backgroundColor: '#E5F0FF',
+    backgroundColor: '#E0F2FE',
   },
   attachmentName: {
     maxWidth: 160,
     fontSize: 12,
-    color: '#1F2937',
+    color: '#1E293B',
     marginRight: 6,
   },
   attachmentRemove: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#64748B',
   },
   statusText: {
     marginTop: 4,
     fontSize: 11,
-    color: '#6B7280',
+    color: '#94A3B8',
   },
   statusError: {
     color: '#DC2626',

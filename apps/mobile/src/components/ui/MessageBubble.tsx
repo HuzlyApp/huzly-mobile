@@ -1,7 +1,9 @@
 import React from 'react';
 import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import type { Message } from '@/lib/messages/messages.service';
+
+const SENT_BG = '#0D9488';
+const RECEIVED_BG = '#F1F5F9';
 
 interface Props {
   message: Message;
@@ -14,26 +16,12 @@ export default function MessageBubble({ message, isOwn }: Props) {
 
   const handleOpenAttachment = () => {
     if (!attachment?.fileUrl) return;
-    Linking.openURL(attachment.fileUrl).catch(() => {
-      // swallow for now; could hook into a global toast/snackbar
-    });
+    Linking.openURL(attachment.fileUrl).catch(() => {});
   };
-
-  const Wrapper: any = isOwn ? LinearGradient : View;
-  const wrapperProps = isOwn
-    ? {
-        colors: ['#4473C0', '#2DD4BF'],
-        start: [0, 0],
-        end: [1, 1],
-      }
-    : {};
 
   return (
     <View style={[styles.row, isOwn && styles.rowOwn]}>
-      <Wrapper
-        {...(wrapperProps as any)}
-        style={[styles.bubble, isOwn ? styles.bubbleGradient : styles.bubbleOther]}
-      >
+      <View style={[styles.bubble, isOwn ? styles.bubbleSent : styles.bubbleReceived]}>
         {message.content ? (
           <Text style={[styles.text, isOwn && styles.textOwn]}>{message.content}</Text>
         ) : null}
@@ -64,26 +52,21 @@ export default function MessageBubble({ message, isOwn }: Props) {
               >
                 {attachment.fileName}
               </Text>
-              <Text style={styles.attachmentSize}>
+              <Text style={[styles.attachmentSize, isOwn && { color: 'rgba(255,255,255,0.7)' }]}>
                 {Math.round((attachment.fileSize ?? 0) / 1024)} KB
               </Text>
-              <Text style={styles.attachmentHint}>Tap to open</Text>
+              <Text style={[styles.attachmentHint, isOwn && { color: 'rgba(255,255,255,0.7)' }]}>Tap to open</Text>
             </View>
           </Pressable>
         ) : null}
 
-        <Text
-          style={[
-            styles.time,
-            isOwn && styles.timeOwn,
-          ]}
-        >
+        <Text style={[styles.time, isOwn && styles.timeOwn]}>
           {new Date(message.sent_at).toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
           })}
         </Text>
-      </Wrapper>
+      </View>
     </View>
   );
 }
@@ -91,7 +74,7 @@ export default function MessageBubble({ message, isOwn }: Props) {
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    marginVertical: 6,
+    marginVertical: 4,
     paddingHorizontal: 16,
     justifyContent: 'flex-start',
   },
@@ -99,37 +82,35 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   bubble: {
-    maxWidth: '80%',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.02,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  bubbleGradient: {
+    maxWidth: '78%',
     paddingHorizontal: 14,
     paddingVertical: 10,
+    borderRadius: 18,
   },
-  bubbleOther: {
-    backgroundColor: '#F3F4F6',
+  bubbleSent: {
+    backgroundColor: SENT_BG,
+    borderBottomRightRadius: 4,
+  },
+  bubbleReceived: {
+    backgroundColor: RECEIVED_BG,
+    borderBottomLeftRadius: 4,
   },
   text: {
     fontSize: 14,
-    color: '#111827',
+    lineHeight: 20,
+    color: '#1E293B',
   },
   textOwn: {
     color: '#FFFFFF',
   },
   time: {
-    marginTop: 6,
+    marginTop: 4,
     fontSize: 11,
-    color: '#6B7280',
+    color: '#94A3B8',
     alignSelf: 'flex-end',
   },
   timeOwn: {
-    color: '#E6F3F0',
+    color: 'rgba(255,255,255,0.7)',
   },
   attachmentContainer: {
     flexDirection: 'row',
@@ -139,10 +120,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   attachmentContainerOwn: {
-    backgroundColor: 'rgba(15, 23, 42, 0.16)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
   attachmentContainerOther: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#E2E8F0',
   },
   attachmentImage: {
     width: 80,
@@ -170,19 +151,19 @@ const styles = StyleSheet.create({
   attachmentName: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#111827',
+    color: '#1E293B',
   },
   attachmentNameOwn: {
     color: '#F9FAFB',
   },
   attachmentSize: {
     fontSize: 11,
-    color: '#6B7280',
+    color: '#94A3B8',
     marginTop: 2,
   },
   attachmentHint: {
     fontSize: 11,
-    color: '#6B7280',
+    color: '#94A3B8',
     marginTop: 2,
   },
 });

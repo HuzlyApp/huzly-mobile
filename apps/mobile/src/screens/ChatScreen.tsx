@@ -1,10 +1,3 @@
-/**
- * ChatScreen.tsx
- *
- * Messaging interface for one-on-one conversations.
- * Displays message history and allows sending new messages.
- */
-
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -44,13 +37,11 @@ import { useAuthSession } from '@/hooks/use-auth-session';
 import { createSupportTicket } from '@/lib/support/support-tickets.service';
 
 const BG = '#FFFFFF';
-const PRIMARY = '#3B6FD8';
-const TEXT_PRIMARY = '#1F2937';
-const TEXT_SECONDARY = '#6B7280';
-const BORDER = '#E5E7EB';
-const MESSAGE_BG = '#E7F1FF';
-const RECEIVED_BG = '#F3F4F6';
-const MODAL_OVERLAY = 'rgba(17, 24, 39, 0.45)';
+const PRIMARY = '#0D9488';
+const TEXT_PRIMARY = '#1E293B';
+const TEXT_SECONDARY = '#64748B';
+const BORDER = '#E6EEF6';
+const MODAL_OVERLAY = 'rgba(15, 23, 42, 0.45)';
 
 const createTicketSchema = z.object({
   subject: z.string().trim().min(1, 'Topic / Subject is required'),
@@ -76,7 +67,9 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [messageText, setMessageText] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [chatStarted, setChatStarted] = useState(false);
 
   const [selectedFile, setSelectedFile] = useState<FileLike | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -98,10 +91,7 @@ export default function ChatScreen() {
     },
   });
 
-  // ─── Load Messages ────────────────────────────────────────────────────────
-
   useEffect(() => {
-    // Wait for auth to complete loading
     if (authLoading) {
       setLoading(true);
       return;
@@ -109,45 +99,47 @@ export default function ChatScreen() {
 
     if (!user) {
       setLoading(false);
-      setError('User not authenticated');
+      setLoadError('User not authenticated');
       return;
     }
 
     if (!receiver_id) {
       setLoading(false);
-      setError('No receiver specified');
+      setLoadError('No receiver specified');
       return;
     }
 
     const loadMessages = async () => {
       setLoading(true);
-      setError(null);
+      setLoadError(null);
 
       const { data, error: fetchError } = await fetchMessages(user.id, receiver_id);
 
       if (fetchError) {
-        setError(fetchError);
+        setLoadError(fetchError);
         setLoading(false);
         return;
       }
 
-      setMessages(data || []);
+      const msgs = data || [];
+      setMessages(msgs);
+      if (msgs.length > 0) {
+        setChatStarted(true);
+      }
       setLoading(false);
     };
 
     loadMessages();
 
-    // Subscribe to real-time messages
     const channel = subscribeToMessages(user.id, receiver_id, (newMessage: Message) => {
       setMessages((prev) => [...prev, newMessage]);
+      setChatStarted(true);
     });
 
     return () => {
       channel.unsubscribe();
     };
   }, [user, receiver_id, authLoading]);
-
-  // ─── Attachments ───────────────────────────────────────────────────────────
 
   const handlePickAttachment = async () => {
     setUploadError(null);
@@ -224,7 +216,9 @@ export default function ChatScreen() {
     router.push(`/support/ticket/${data.id}`);
   };
 
-  // ─── Handle Send Message ──────────────────────────────────────────────────
+  const handleGetStarted = () => {
+    setChatStarted(true);
+  };
 
   const handleSendMessage = async () => {
     if (!user || !receiver_id) return;
@@ -255,7 +249,7 @@ export default function ChatScreen() {
       attachment = uploaded;
     }
 
-    const { error: sendError } = await sendMessage({
+    const { error: msgSendError } = await sendMessage({
       sender_id: user.id,
       receiver_id,
       content: textToSend,
@@ -265,21 +259,43 @@ export default function ChatScreen() {
     setSending(false);
     setSelectedFile(null);
 
-    if (sendError) {
-      setError(sendError);
+    if (msgSendError) {
+      setSendError(msgSendError);
       setMessageText(textToSend);
+    } else {
+      setSendError(null);
     }
   };
 
-  // ─── Render Message Item ──────────────────────────────────────────────────
-
   const renderMessageItem = ({ item }: { item: Message }) => {
     const isOwn = item.sender_id === user?.id;
-
     return <MessageBubble message={item} isOwn={isOwn} />;
   };
 
-  // ─── Render Empty State ────────────────────────────────────────────────────
+  const renderGetStarted = () => (
+    <View style={styles.getStartedContainer}>
+      <View style={styles.getStartedCard}>
+        <Text style={styles.getStartedCompany}>{receiver_name || 'Employer'}</Text>
+        <Text style={styles.getStartedText}>
+          Hi! Thanks for your message. Please let us know how we can help. When you're ready, click "Get Started" below to begin.
+        </Text>
+      </View>
+
+      <Pressable
+        style={({ pressed }) => [styles.chatWithEmployerBtn, pressed && { opacity: 0.85 }]}
+        onPress={handleGetStarted}
+      >
+        <Text style={styles.chatWithEmployerText}>Chat with Employer</Text>
+      </Pressable>
+
+      <Pressable
+        style={({ pressed }) => [styles.getStartedBtn, pressed && { opacity: 0.85 }]}
+        onPress={handleGetStarted}
+      >
+        <Text style={styles.getStartedBtnText}>Get Started</Text>
+      </Pressable>
+    </View>
+  );
 
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
@@ -288,39 +304,28 @@ export default function ChatScreen() {
     </View>
   );
 
-  // ─── Loading State ────────────────────────────────────────────────────────
-
-  if (loading || error) {
+  if (loading || loadError) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.container}>
           <ChatHeader title={receiver_name || 'Chat'} onBack={() => router.back()} onRight={() => {}} />
-          {error ? (
+          {loadError ? (
             <View style={styles.errorBanner}>
-              <Text style={styles.errorBannerText}>{error}</Text>
-              <Pressable
-                onPress={() => router.back()}
-                style={{ marginTop: 12 }}
-              >
-                <Text style={[styles.errorBannerText, { color: PRIMARY, fontWeight: '600' }]}>
-                  Go Back
-                </Text>
+              <Text style={styles.errorBannerText}>{loadError}</Text>
+              <Pressable onPress={() => router.back()} style={{ marginTop: 12 }}>
+                <Text style={[styles.errorBannerText, { color: PRIMARY, fontWeight: '600' as const }]}>Go Back</Text>
               </Pressable>
             </View>
           ) : (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={PRIMARY} />
-              <Text style={{ marginTop: 12, color: TEXT_SECONDARY }}>
-                Loading chat...
-              </Text>
+              <Text style={{ marginTop: 12, color: TEXT_SECONDARY }}>Loading chat...</Text>
             </View>
           )}
         </View>
       </SafeAreaView>
     );
   }
-
-  // ─── Render Screen ────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -329,60 +334,65 @@ export default function ChatScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        {/* Header */}
         <ChatHeader title={receiver_name || 'Chat'} onBack={() => router.back()} onRight={() => {}} />
 
-        <View style={styles.ticketCtaContainer}>
-          <Pressable
-            style={({ pressed }) => [styles.ticketCtaButton, pressed && styles.ticketCtaButtonPressed]}
-            onPress={handleOpenTicketModal}
-          >
-            <Text style={styles.ticketCtaButtonText}>Create Ticket</Text>
-          </Pressable>
-        </View>
+        {!chatStarted && messages.length === 0 ? (
+          <>
+            {renderGetStarted()}
+            <View style={{ flex: 1 }} />
+            <BottomNav />
+          </>
+        ) : (
+          <>
+            <View style={styles.quickActions}>
+              <Pressable
+                style={({ pressed }) => [styles.quickActionBtn, pressed && { opacity: 0.85 }]}
+                onPress={handleOpenTicketModal}
+              >
+                <Text style={styles.quickActionText}>Create Ticket</Text>
+              </Pressable>
+            </View>
 
-        {/* Error Banner */}
-        {error ? (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorBannerText}>{error}</Text>
-          </View>
-        ) : null}
+            {sendError ? (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorBannerText}>{sendError}</Text>
+              </View>
+            ) : null}
 
-        {/* Messages List */}
-        <FlatList
-          data={messages}
-          renderItem={renderMessageItem}
-          keyExtractor={(item) => item.id}
-          scrollEnabled
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={renderEmptyState}
-          contentContainerStyle={messages.length === 0 ? styles.emptyListContent : undefined}
-          onEndReachedThreshold={0.1}
-        />
+            <FlatList
+              data={messages}
+              renderItem={renderMessageItem}
+              keyExtractor={(item) => item.id}
+              scrollEnabled
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={renderEmptyState}
+              contentContainerStyle={messages.length === 0 ? styles.emptyListContent : { paddingVertical: 12 }}
+              onEndReachedThreshold={0.1}
+            />
 
-        {/* Input Area */}
-        <MessageInput
-          value={messageText}
-          onChangeText={setMessageText}
-          onSend={handleSendMessage}
-          sending={sending}
-          onAttachPress={handlePickAttachment}
-          selectedFile={
-            selectedFile
-              ? {
-                  name: selectedFile.name,
-                  size: selectedFile.size,
-                  mimeType: selectedFile.mimeType,
-                }
-              : undefined
-          }
-          onClearAttachment={handleClearAttachment}
-          uploading={uploading}
-          uploadError={uploadError}
-        />
+            <MessageInput
+              value={messageText}
+              onChangeText={setMessageText}
+              onSend={handleSendMessage}
+              sending={sending}
+              onAttachPress={handlePickAttachment}
+              selectedFile={
+                selectedFile
+                  ? {
+                      name: selectedFile.name,
+                      size: selectedFile.size,
+                      mimeType: selectedFile.mimeType,
+                    }
+                  : undefined
+              }
+              onClearAttachment={handleClearAttachment}
+              uploading={uploading}
+              uploadError={uploadError}
+            />
 
-        {/* Bottom Navigation (visual) */}
-        <BottomNav />
+            <BottomNav />
+          </>
+        )}
       </KeyboardAvoidingView>
 
       <Modal
@@ -408,7 +418,7 @@ export default function ChatScreen() {
                     onBlur={onBlur}
                     style={[styles.formInput, errors.subject ? styles.formInputError : null]}
                     placeholder="Brief summary of your issue"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor="#94A3B8"
                   />
                   {errors.subject ? <Text style={styles.errorTextInline}>{errors.subject.message}</Text> : null}
                 </View>
@@ -427,7 +437,7 @@ export default function ChatScreen() {
                     onBlur={onBlur}
                     style={[styles.formInput, styles.formTextarea, errors.description ? styles.formInputError : null]}
                     placeholder="Describe your request in detail"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor="#94A3B8"
                     multiline
                     textAlignVertical="top"
                   />
@@ -466,105 +476,86 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  // ─── Container ────────────────────────────────────────────────────────────
-
   safe: { flex: 1, backgroundColor: BG },
-  container: { flex: 1, backgroundColor: BG },
-  ticketCtaContainer: {
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+
+  quickActions: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 8,
+    backgroundColor: BG,
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
     alignItems: 'flex-end',
   },
-  ticketCtaButton: {
-    backgroundColor: '#EEF2FF',
+  quickActionBtn: {
+    backgroundColor: '#F0FDFA',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#99F6E4',
   },
-  ticketCtaButtonPressed: {
-    opacity: 0.8,
-  },
-  ticketCtaButtonText: {
+  quickActionText: {
     color: PRIMARY,
     fontSize: 13,
+    fontWeight: '600',
+  },
+
+  getStartedContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    alignItems: 'center',
+  },
+  getStartedCard: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 16,
+    padding: 16,
+    width: '100%',
+    marginBottom: 16,
+  },
+  getStartedCompany: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    marginBottom: 8,
+  },
+  getStartedText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: TEXT_SECONDARY,
+  },
+  chatWithEmployerBtn: {
+    width: '100%',
+    borderWidth: 1.5,
+    borderColor: PRIMARY,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  chatWithEmployerText: {
+    color: PRIMARY,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  getStartedBtn: {
+    width: '100%',
+    backgroundColor: PRIMARY,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  getStartedBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '700',
   },
-
-  // ─── Header ───────────────────────────────────────────────────────────────
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
-  },
-  backButton: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: PRIMARY,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: TEXT_PRIMARY,
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 40,
-  },
-
-  // ─── Messages ─────────────────────────────────────────────────────────────
-
-  messageRow: {
-    flexDirection: 'row',
-    marginVertical: 4,
-    paddingHorizontal: 16,
-    justifyContent: 'flex-start',
-  },
-  messageRowOwn: {
-    justifyContent: 'flex-end',
-  },
-  messageBubble: {
-    maxWidth: '80%',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: RECEIVED_BG,
-  },
-  messageBubbleOwn: {
-    backgroundColor: MESSAGE_BG,
-  },
-  messageText: {
-    fontSize: 14,
-    color: TEXT_PRIMARY,
-  },
-  messageTextOwn: {
-    color: TEXT_PRIMARY,
-  },
-  messageTime: {
-    fontSize: 11,
-    color: TEXT_SECONDARY,
-    marginTop: 4,
-  },
-  messageTimeOwn: {
-    color: TEXT_SECONDARY,
-  },
-
-  // ─── Loading State ────────────────────────────────────────────────────────
 
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  // ─── Empty State ──────────────────────────────────────────────────────────
 
   emptyListContent: {
     flexGrow: 1,
@@ -589,8 +580,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // ─── Error Banner ─────────────────────────────────────────────────────────
-
   errorBanner: {
     backgroundColor: '#FEF2F2',
     borderBottomWidth: 1,
@@ -608,45 +597,6 @@ const styles = StyleSheet.create({
     color: '#DC2626',
   },
 
-  // ─── Input Area ───────────────────────────────────────────────────────────
-
-  inputArea: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
-    backgroundColor: BG,
-  },
-  input: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 100,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
-    color: TEXT_PRIMARY,
-    marginRight: 8,
-  },
-  sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: PRIMARY,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendButtonDisabled: {
-    opacity: 0.5,
-  },
-  sendButtonText: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: '600',
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: MODAL_OVERLAY,
@@ -655,8 +605,8 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
   },
   modalTitle: {
     fontSize: 18,
@@ -665,12 +615,12 @@ const styles = StyleSheet.create({
   },
   modalSubtitle: {
     marginTop: 4,
-    marginBottom: 12,
+    marginBottom: 16,
     fontSize: 13,
     color: TEXT_SECONDARY,
   },
   formField: {
-    marginBottom: 12,
+    marginBottom: 14,
   },
   formLabel: {
     fontSize: 13,
@@ -694,7 +644,7 @@ const styles = StyleSheet.create({
     borderColor: '#EF4444',
   },
   modalActions: {
-    marginTop: 6,
+    marginTop: 8,
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
