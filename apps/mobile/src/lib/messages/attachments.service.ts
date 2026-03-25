@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/config/supabase';
+import { env } from '@/lib/config/env';
 
 export type MessageAttachment = {
   fileName: string;
@@ -7,7 +8,6 @@ export type MessageAttachment = {
   fileSize: number;
 };
 
-// Shape used inside the app when picking a file
 export type FileLike = {
   uri: string;
   name: string;
@@ -16,12 +16,12 @@ export type FileLike = {
 };
 
 const BUCKET = 'message-files';
-const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+const MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
 export const ALLOWED_MIME_TYPES = [
   'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',       // .xlsx
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'image/jpeg',
   'image/png',
 ] as const;
@@ -32,10 +32,48 @@ export function validateAttachment(file: FileLike): string | null {
   }
 
   if (file.size > MAX_SIZE_BYTES) {
-    return 'File is too large. Maximum size is 10MB.';
+    return 'File is too large. Maximum size is 5MB.';
   }
 
   return null;
+}
+
+async function compressFileViaEdge(
+  bucket: string,
+  path: string,
+): Promise<{ signedUrl: string | null; compressed: boolean; compressedSize?: number }> {
+  try {
+    const functionUrl = `${env.supabaseUrl}/functions/v1/compress-file`;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token;
+
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken ?? env.supabaseAnonKey}`,
+      },
+      body: JSON.stringify({ bucket, path, quality: 60 }),
+    });
+
+    if (!response.ok) {
+      console.warn('Compression edge function failed:', response.status);
+      return { signedUrl: null, compressed: false };
+    }
+
+    const result = await response.json();
+    console.log('Compression result:', result);
+
+    if (result.compressed && result.signedUrl) {
+      return { signedUrl: result.signedUrl, compressed: true, compressedSize: result.compressedSize };
+    }
+
+    return { signedUrl: result.signedUrl ?? null, compressed: false };
+  } catch (err) {
+    console.warn('Compression edge function error:', err);
+    return { signedUrl: null, compressed: false };
+  }
 }
 
 export async function uploadMessageAttachment(
@@ -50,7 +88,6 @@ export async function uploadMessageAttachment(
 
     const timestamp = Date.now();
     const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-    // Store files inside a folder named message_attachments in the bucket
     const path = `message_attachments/${userId}_${timestamp}_${safeName}`;
 
     const response = await fetch(file.uri);
@@ -67,19 +104,37 @@ export async function uploadMessageAttachment(
       return { attachment: null, error: uploadError.message };
     }
 
-    const { data: signed, error: signedError } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(path, 60 * 60 * 24 * 7); // 7 days
+    const isImage = file.mimeType.startsWith('image/');
+    let finalUrl: string | null = null;
+    let finalSize = file.size;
 
-    if (signedError || !signed?.signedUrl) {
-      return { attachment: null, error: signedError?.message ?? 'Failed to generate file URL.' };
+    if (isImage) {
+      const compressed = await compressFileViaEdge(BUCKET, path);
+      if (compressed.signedUrl) {
+        finalUrl = compressed.signedUrl;
+      }
+      if (compressed.compressedSize) {
+        finalSize = compressed.compressedSize;
+      }
+    }
+
+    if (!finalUrl) {
+      const { data: signed, error: signedError } = await supabase.storage
+        .from(BUCKET)
+        .createSignedUrl(path, 60 * 60 * 24 * 7);
+
+      if (signedError || !signed?.signedUrl) {
+        return { attachment: null, error: signedError?.message ?? 'Failed to generate file URL.' };
+      }
+
+      finalUrl = signed.signedUrl;
     }
 
     const attachment: MessageAttachment = {
       fileName: file.name,
       fileType: file.mimeType,
-      fileUrl: signed.signedUrl,
-      fileSize: file.size,
+      fileUrl: finalUrl,
+      fileSize: finalSize,
     };
 
     return { attachment, error: null };
@@ -87,4 +142,3 @@ export async function uploadMessageAttachment(
     return { attachment: null, error: error?.message ?? 'Failed to upload attachment.' };
   }
 }
-
