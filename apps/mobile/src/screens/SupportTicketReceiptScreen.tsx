@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -26,6 +26,33 @@ export default function SupportTicketReceiptScreen() {
     const rawId = params.id;
     return Array.isArray(rawId) ? rawId[0] : rawId;
   }, [params.id]);
+
+  const displayStatus = useMemo(() => {
+    if (!ticket?.status) return 'Pending';
+    switch (ticket.status) {
+      case 'Open':
+        return 'Pending';
+      case 'In Progress':
+        return 'In Progress';
+      case 'Resolved':
+        return 'Resolved';
+      default:
+        return ticket.status;
+    }
+  }, [ticket?.status]);
+
+  const statusColor = useMemo(() => {
+    switch (ticket?.status) {
+      case 'Open':
+        return '#F59E0B';
+      case 'In Progress':
+        return '#3B82F6';
+      case 'Resolved':
+        return '#10B981';
+      default:
+        return '#64748B';
+    }
+  }, [ticket?.status]);
 
   useEffect(() => {
     if (authLoading) {
@@ -66,7 +93,11 @@ export default function SupportTicketReceiptScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator
+      >
         <View style={styles.card}>
           {loading ? (
             <View style={styles.centerContent}>
@@ -84,9 +115,9 @@ export default function SupportTicketReceiptScreen() {
               <View style={styles.successIconWrap}>
                 <Ionicons name="checkmark-circle" size={48} color={PRIMARY} />
               </View>
-              <Text style={styles.title}>Ticket Submitted</Text>
+                  <Text style={styles.title}>Support Ticket Created</Text>
               <Text style={styles.subtext}>
-                Please wait within 24 hours for a response from our support team.
+                    Your support ticket has been created. Our team will get back to you shortly.
               </Text>
 
               <View style={styles.detailCard}>
@@ -108,8 +139,8 @@ export default function SupportTicketReceiptScreen() {
                 <View style={styles.detailRow}>
                   <Text style={styles.label}>Status</Text>
                   <View style={styles.statusBadge}>
-                    <View style={styles.statusDot} />
-                    <Text style={styles.statusText}>{ticket?.status || 'Open'}</Text>
+                    <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                    <Text style={styles.statusText}>{displayStatus}</Text>
                   </View>
                 </View>
                 <View style={styles.divider} />
@@ -130,7 +161,7 @@ export default function SupportTicketReceiptScreen() {
             <Text style={styles.backButtonText}>Back to Messages</Text>
           </Pressable>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -142,8 +173,11 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    justifyContent: 'center',
     padding: 20,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   card: {
     backgroundColor: CARD_BG,

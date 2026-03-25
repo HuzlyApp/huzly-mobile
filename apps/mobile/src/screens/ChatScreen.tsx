@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -32,7 +32,10 @@ import {
   type FileLike,
 } from '@/lib/messages/attachments.service';
 import { useAuthSession } from '@/hooks/use-auth-session';
-import { createSupportTicket } from '@/lib/support/support-tickets.service';
+import { useAgentUnresponsiveFallback } from '@/hooks/use-agent-unresponsive-fallback';
+import SupportTicketCreateModal from '@/components/support/SupportTicketCreateModal';
+import { getJsonItem, setJsonItem } from '@/stores/async-storage';
+import { createSupportTicket, fetchWorkerTicketCategories } from '@/lib/support/support-tickets.service';
 import { getAIResponse } from '@/lib/ai/xai.service';
 
 const BG = '#FFFFFF';
@@ -88,6 +91,169 @@ export default function ChatScreen() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const aiTypingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const FALLBACK_MS = 15 * 60 * 1000;
+
+  const {
+    available: fallbackAvailable,
+    secondsLeft,
+    lastUserMessageAtIso,
+  } = useAgentUnresponsiveFallback<ChatMessage>({
+    enabled: chatMode === 'human' && !!user?.id,
+    userId: user?.id ?? null,
+    messages,
+    inactivityMs: FALLBACK_MS,
+  });
+
+  const [ticketCreatedForContext, setTicketCreatedForContext] = useState<boolean | null>(null);
+  const [ticketModalVisible, setTicketModalVisible] = useState(false);
+  const [ticketModalContextSentAtIso, setTicketModalContextSentAtIso] = useState<string | null>(null);
+  const [ticketInitialSubject, setTicketInitialSubject] = useState('');
+  const [ticketInitialDescription, setTicketInitialDescription] = useState('');
+  const [ticketCategories, setTicketCategories] = useState<string[]>([]);
+  const [ticketCategoriesLoading, setTicketCategoriesLoading] = useState(false);
+
+  const ticketCreatedKey = useMemo(() => {
+    if (!user?.id || !receiver_id || !lastUserMessageAtIso) return null;
+    return `fallback_ticket_created:${user.id}:${receiver_id}:${lastUserMessageAtIso}`;
+  }, [user?.id, receiver_id, lastUserMessageAtIso]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!ticketCreatedKey) {
+        if (!cancelled) setTicketCreatedForContext(false);
+        return;
+      }
+
+      const stored = await getJsonItem<{ ticketId: string }>(ticketCreatedKey);
+      if (cancelled) return;
+      setTicketCreatedForContext(!!stored?.ticketId);
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ticketCreatedKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadCategories = async () => {
+      if (!user?.id) return;
+      setTicketCategoriesLoading(true);
+      const { data, error } = await fetchWorkerTicketCategories();
+      if (cancelled) return;
+      if (error || !data) {
+        setTicketCategories([]);
+      } else {
+        setTicketCategories(data);
+      }
+      setTicketCategoriesLoading(false);
+    };
+
+    loadCategories();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const chatPartnerLabel = useMemo(() => {
+    if (!receiver_id) return undefined;
+    if (receiver_name) return `${receiver_name} (${receiver_id})`;
+    return receiver_id;
+  }, [receiver_id, receiver_name]);
+
+  const showFallbackCard = chatMode === 'human' && fallbackAvailable && ticketCreatedForContext === false;
+
+  const getLastUserMessage = () => {
+    if (!user?.id) return null;
+    let latest: ChatMessage | null = null;
+    let latestMs = -Infinity;
+    for (const m of messages) {
+      if (m.sender_id !== user.id) continue;
+      const ms = new Date(m.sent_at).getTime();
+      if (!Number.isFinite(ms)) continue;
+      if (ms > latestMs) {
+        latestMs = ms;
+        latest = m;
+      }
+    }
+    return latest;
+  };
+
+  const buildChatHistoryForTicket = (maxItems = 10) => {
+    if (!user?.id) return '';
+    const slice = messages.slice(-maxItems);
+
+    const formatMessage = (m: ChatMessage) => {
+      const sender = m.sender_id === user.id ? 'You' : 'Agent/Other';
+      const trimmed = (m.content ?? '').trim();
+      const attachmentLabel = m.attachments?.fileName ? ` (attachment: ${m.attachments.fileName})` : '';
+      const body = trimmed ? trimmed : attachmentLabel.trim() ? attachmentLabel.trim() : '[no text]';
+      const at = m.sent_at ? new Date(m.sent_at).toISOString() : '';
+      return `${sender} @ ${at}: ${body}`;
+    };
+
+    return slice.map(formatMessage).join('\n');
+  };
+
+  const handleCreateTicketPress = () => {
+    if (!user?.id || !receiver_id || !lastUserMessageAtIso) return;
+    if (ticketCreatedForContext !== false) return;
+
+    const lastUserMsg = getLastUserMessage();
+    if (!lastUserMsg) return;
+
+    const subject = 'Support request (Chat)';
+    const history = buildChatHistoryForTicket(10);
+    const defaultDescription = [
+      `User ID: ${user.id}`,
+      chatPartnerLabel ? `Chat partner: ${chatPartnerLabel}` : `Chat partner ID: ${receiver_id}`,
+      '',
+      'Last conversation messages (for context):',
+      history || '-',
+      '',
+      'Message from you:',
+      (lastUserMsg.content ?? '').trim() || '[attachment(s)]',
+      '',
+      'What help do you need?',
+    ].join('\n');
+
+    setTicketModalContextSentAtIso(lastUserMessageAtIso);
+    setTicketInitialSubject(subject);
+    setTicketInitialDescription(defaultDescription);
+    setTicketModalVisible(true);
+  };
+
+  const handleSubmitTicket = async (input: { subject: string; category: string; description: string }) => {
+    if (!user?.id || !receiver_id || !ticketModalContextSentAtIso) return;
+
+    const submittedAt = new Date().toISOString();
+    const finalDescription = `${input.description}\n\nSubmitted at: ${submittedAt}\nUser ID: ${user.id}`;
+
+    const { data: ticket, error } = await createSupportTicket({
+      userId: user.id,
+      subject: input.subject,
+      category: input.category,
+      description: finalDescription,
+    });
+
+    if (error || !ticket) {
+      throw new Error(error ?? 'Failed to create ticket.');
+    }
+
+    await setJsonItem(`fallback_ticket_created:${user.id}:${receiver_id}:${ticketModalContextSentAtIso}`, {
+      ticketId: ticket.id,
+    });
+
+    setTicketModalVisible(false);
+    setTicketCreatedForContext(true);
+
+    router.push(`/support/ticket/${ticket.id}`);
+  };
 
   // Ensure we never leave a running typing interval after unmount.
   useEffect(() => {
@@ -504,6 +670,28 @@ export default function ChatScreen() {
               </Pressable>
             )}
 
+            {chatMode === 'human' && secondsLeft !== null && !fallbackAvailable && ticketCreatedForContext !== true ? (
+              <View style={styles.fallbackCountdownRow}>
+                <Text style={styles.fallbackCountdownText}>
+                  Agent will respond shortly... {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}
+                </Text>
+              </View>
+            ) : null}
+
+            {showFallbackCard ? (
+              <View style={styles.fallbackCard}>
+                <Text style={styles.fallbackTitle}>It looks like no agent is available right now.</Text>
+                <Text style={styles.fallbackBody}>Would you like to create a support ticket?</Text>
+
+                <Pressable
+                  style={({ pressed }) => [styles.fallbackButton, pressed && { opacity: 0.9 }]}
+                  onPress={handleCreateTicketPress}
+                >
+                  <Text style={styles.fallbackButtonText}>Create Ticket</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
             <MessageInput
               value={messageText}
               onChangeText={setMessageText}
@@ -514,6 +702,18 @@ export default function ChatScreen() {
               onClearAttachment={handleClearAttachment}
               uploading={uploading}
               uploadError={uploadError}
+            />
+
+            <SupportTicketCreateModal
+              visible={ticketModalVisible}
+              onClose={() => setTicketModalVisible(false)}
+              onSubmit={handleSubmitTicket}
+              userId={user?.id ?? ''}
+              chatPartnerLabel={chatPartnerLabel}
+              defaultSubject={ticketInitialSubject}
+              categories={ticketCategories}
+              categoriesLoading={ticketCategoriesLoading}
+              defaultDescription={ticketInitialDescription}
             />
 
             <BottomNav active="message" />
@@ -660,6 +860,57 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: PRIMARY,
+  },
+
+  fallbackCountdownRow: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: '#F8FAFC',
+  },
+  fallbackCountdownText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
+  },
+  fallbackCard: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: '#FFFFFF',
+    gap: 8,
+  },
+  fallbackTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+  },
+  fallbackBody: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
+    lineHeight: 16,
+  },
+  fallbackButton: {
+    marginTop: 4,
+    backgroundColor: PRIMARY,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fallbackButtonText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 
   loadingContainer: {
