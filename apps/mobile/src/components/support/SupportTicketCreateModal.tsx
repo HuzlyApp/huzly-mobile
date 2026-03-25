@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,11 +11,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+
+import { ALLOWED_MIME_TYPES, type FileLike, validateAttachment } from '@/lib/messages/attachments.service';
 
 type Props = {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (input: { subject: string; category: string; description: string }) => Promise<void>;
+  onSubmit: (input: { subject: string; category: string; description: string; file: FileLike | null }) => Promise<void>;
   userId: string;
   chatPartnerLabel?: string;
   defaultSubject: string;
@@ -38,6 +42,7 @@ export default function SupportTicketCreateModal({
   const [category, setCategory] = useState('');
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [description, setDescription] = useState(defaultDescription);
+  const [selectedFile, setSelectedFile] = useState<FileLike | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +52,7 @@ export default function SupportTicketCreateModal({
     setCategory(categories[0] ?? '');
     setCategoryOpen(false);
     setDescription(defaultDescription);
+    setSelectedFile(null);
     setSubmitting(false);
     setError(null);
   }, [visible, defaultSubject, defaultDescription, categories]);
@@ -66,12 +72,48 @@ export default function SupportTicketCreateModal({
         subject: subject.trim(),
         category: category.trim(),
         description: description.trim(),
+        file: selectedFile,
       });
       setSubmitting(false);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to create ticket.');
       setSubmitting(false);
       return;
+    }
+  };
+
+  const handleAttachPress = async () => {
+    try {
+      const mimeTypes = Platform.OS === 'web'
+        ? ['image/*', 'application/pdf', '.docx', '.xlsx']
+        : [...ALLOWED_MIME_TYPES];
+
+      const result = await DocumentPicker.getDocumentAsync({
+        type: mimeTypes,
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets?.length) return;
+
+      const asset = result.assets[0];
+      const file: FileLike = {
+        uri: asset.uri,
+        name: asset.name,
+        mimeType: asset.mimeType || 'application/octet-stream',
+        size: asset.size || 0,
+      };
+
+      const validationError = validateAttachment(file);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+
+      setSelectedFile(file);
+      setError(null);
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to pick attachment.');
     }
   };
 
@@ -180,6 +222,32 @@ export default function SupportTicketCreateModal({
                 textAlignVertical="top"
                 editable={!submitting}
               />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Attachment (optional)</Text>
+              <View style={styles.attachmentRow}>
+                <Pressable style={styles.attachmentButton} onPress={handleAttachPress} disabled={submitting}>
+                  <Ionicons name="attach" size={16} color="#4473C0" />
+                  <Text style={styles.attachmentButtonText}>
+                    {selectedFile ? 'Change file' : 'Upload file'}
+                  </Text>
+                </Pressable>
+                {selectedFile ? (
+                  <Pressable
+                    style={styles.attachmentRemoveBtn}
+                    onPress={() => setSelectedFile(null)}
+                    disabled={submitting}
+                  >
+                    <Text style={styles.attachmentRemoveText}>Remove</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              {selectedFile ? (
+                <Text style={styles.attachmentMeta} numberOfLines={2}>
+                  {selectedFile.name} ({Math.max(1, Math.round(selectedFile.size / 1024))} KB)
+                </Text>
+              ) : null}
             </View>
 
             {error ? (
@@ -394,6 +462,41 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '800',
+  },
+  attachmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  attachmentButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFD0EE',
+    backgroundColor: '#F8FBFF',
+  },
+  attachmentButtonText: {
+    color: '#4473C0',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  attachmentRemoveBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  attachmentRemoveText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  attachmentMeta: {
+    fontSize: 12,
+    color: '#475569',
+    marginTop: 4,
   },
 });
 

@@ -35,7 +35,11 @@ import { useAuthSession } from '@/hooks/use-auth-session';
 import { useAgentUnresponsiveFallback } from '@/hooks/use-agent-unresponsive-fallback';
 import SupportTicketCreateModal from '@/components/support/SupportTicketCreateModal';
 import { getJsonItem, setJsonItem } from '@/stores/async-storage';
-import { createSupportTicket, fetchWorkerTicketCategories } from '@/lib/support/support-tickets.service';
+import {
+  createSupportTicket,
+  fetchWorkerTicketCategories,
+  uploadSupportTicketAttachment,
+} from '@/lib/support/support-tickets.service';
 import { getAIResponse } from '@/lib/ai/xai.service';
 
 const BG = '#FFFFFF';
@@ -92,7 +96,7 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
   const aiTypingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const FALLBACK_MS = 15 * 60 * 1000;
+  const FALLBACK_MS = 20 * 1000;
 
   const {
     available: fallbackAvailable,
@@ -228,11 +232,31 @@ export default function ChatScreen() {
     setTicketModalVisible(true);
   };
 
-  const handleSubmitTicket = async (input: { subject: string; category: string; description: string }) => {
+  const handleSubmitTicket = async (
+    input: { subject: string; category: string; description: string; file: FileLike | null },
+  ) => {
     if (!user?.id || !receiver_id || !ticketModalContextSentAtIso) return;
 
     const submittedAt = new Date().toISOString();
-    const finalDescription = `${input.description}\n\nSubmitted at: ${submittedAt}\nUser ID: ${user.id}`;
+    let attachmentSection = '';
+
+    if (input.file) {
+      const { data: uploadedAttachment, error: uploadError } = await uploadSupportTicketAttachment(input.file, user.id);
+      if (uploadError || !uploadedAttachment) {
+        throw new Error(uploadError ?? 'Failed to upload ticket attachment.');
+      }
+
+      attachmentSection = [
+        '',
+        'Attachment:',
+        `Name: ${uploadedAttachment.fileName}`,
+        `Type: ${uploadedAttachment.fileType}`,
+        `Size: ${uploadedAttachment.fileSize} bytes`,
+        `URL: ${uploadedAttachment.fileUrl}`,
+      ].join('\n');
+    }
+
+    const finalDescription = `${input.description}${attachmentSection}\n\nSubmitted at: ${submittedAt}\nUser ID: ${user.id}`;
 
     const { data: ticket, error } = await createSupportTicket({
       userId: user.id,

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/config/supabase';
+import { ALLOWED_MIME_TYPES, type FileLike, validateAttachment } from '@/lib/messages/attachments.service';
 
 export interface SupportTicket {
   id: string;
@@ -24,6 +25,13 @@ interface CreateTicketInput {
 
 export interface WorkerTicketCategory {
   category: string;
+}
+
+export interface SupportTicketAttachment {
+  fileName: string;
+  fileType: string;
+  fileUrl: string;
+  fileSize: number;
 }
 
 export async function createSupportTicket(
@@ -103,6 +111,61 @@ export async function fetchWorkerTicketCategories(): Promise<SupportTicketResult
     return { data: Array.from(new Set(values)), error: null };
   } catch (error: any) {
     return { data: null, error: error?.message ?? 'Failed to load ticket categories.' };
+  }
+}
+
+export async function uploadSupportTicketAttachment(
+  file: FileLike,
+  userId: string,
+): Promise<SupportTicketResult<SupportTicketAttachment>> {
+  try {
+    const validationError = validateAttachment(file);
+    if (validationError) {
+      return { data: null, error: validationError };
+    }
+
+    if (!ALLOWED_MIME_TYPES.includes(file.mimeType as (typeof ALLOWED_MIME_TYPES)[number])) {
+      return { data: null, error: 'Unsupported file type.' };
+    }
+
+    const timestamp = Date.now();
+    const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    // One folder per user so Storage RLS can match: ticket_attachments/<uid>/...
+    const path = `ticket_attachments/${userId}/${timestamp}_${safeName}`;
+
+    const response = await fetch(file.uri);
+    const blob = await response.blob();
+
+    const { error: uploadError } = await supabase.storage
+      .from('ticket-files')
+      .upload(path, blob, {
+        contentType: file.mimeType,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      return { data: null, error: uploadError.message };
+    }
+
+    const { data: signed, error: signedError } = await supabase.storage
+      .from('ticket-files')
+      .createSignedUrl(path, 60 * 60 * 24 * 7);
+
+    if (signedError || !signed?.signedUrl) {
+      return { data: null, error: signedError?.message ?? 'Failed to generate file URL.' };
+    }
+
+    return {
+      data: {
+        fileName: file.name,
+        fileType: file.mimeType,
+        fileUrl: signed.signedUrl,
+        fileSize: file.size,
+      },
+      error: null,
+    };
+  } catch (error: any) {
+    return { data: null, error: error?.message ?? 'Failed to upload ticket attachment.' };
   }
 }
 
