@@ -34,7 +34,8 @@ export interface Message {
   receiver_id: string;
   content: string;
   sent_at: string;
-  read: boolean;
+  /** Matches DB column `is_read` (PostgREST snake_case). */
+  is_read?: boolean;
   attachments?: MessageAttachment | null;
 }
 
@@ -291,4 +292,89 @@ export function subscribeToMessages(
     .subscribe();
 
   return channel;
+}
+
+/**
+ * Subscribe to all messages addressed to the current user (incoming only).
+ * Used for global notifications and unread counts.
+ */
+export function subscribeToIncomingMessages(
+  receiver_user_id: string,
+  callback: (message: Message) => void,
+) {
+  const channel = supabase
+    .channel(`messages:incoming:${receiver_user_id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+      },
+      (payload: { new: Record<string, unknown> }) => {
+        const message = payload.new as unknown as Message;
+        if (message.receiver_id !== receiver_user_id) return;
+        callback(message);
+      },
+    )
+    .subscribe();
+
+  return channel;
+}
+
+/**
+ * Unread incoming messages grouped by sender (current user is receiver).
+ */
+export async function fetchUnreadCountsBySender(
+  current_user_id: string,
+): Promise<ServiceResult<Record<string, number>>> {
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('sender_id')
+      .eq('receiver_id', current_user_id)
+      .eq('is_read', false);
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    const counts: Record<string, number> = {};
+    for (const row of data || []) {
+      const sid = (row as { sender_id: string }).sender_id;
+      if (!sid) continue;
+      counts[sid] = (counts[sid] || 0) + 1;
+    }
+
+    return { data: counts, error: null };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to load unread counts';
+    return { data: null, error: msg };
+  }
+}
+
+/**
+ * Mark all messages from `partner_user_id` to the current user as read.
+ */
+export async function markConversationAsRead(
+  current_user_id: string,
+  partner_user_id: string,
+): Promise<ServiceResult<void>> {
+  try {
+    const { error } = await supabase
+      .from('messages')
+      .update({ is_read: true })
+      .eq('receiver_id', current_user_id)
+      .eq('sender_id', partner_user_id)
+      .eq('is_read', false);
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: null, error: null };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to mark messages read';
+    return { data: null, error: msg };
+  }
 }

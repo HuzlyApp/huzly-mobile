@@ -19,6 +19,7 @@ import {
 } from '@/lib/support/support-tickets.service';
 import { useAuthSession } from '@/hooks/use-auth-session';
 import BottomNav from '@/components/ui/BottomNav';
+import { useMessageNotifications } from '@/contexts/MessageNotificationsContext';
 
 const BG = '#FFFFFF';
 const SURFACE = '#F8FAFC';
@@ -31,6 +32,7 @@ export default function MessagingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ ticketCreated?: string | string[] }>();
   const { session, loading: authLoading } = useAuthSession();
+  const { unreadBySenderId, refreshUnreadCounts } = useMessageNotifications();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,8 +98,9 @@ export default function MessagingScreen() {
           }
         };
         refreshData();
+        void refreshUnreadCounts();
       }
-    }, [authLoading, session])
+    }, [authLoading, session, refreshUnreadCounts])
   );
 
   const handleContactPress = (contact: Contact) => {
@@ -178,25 +181,37 @@ export default function MessagingScreen() {
             <Text style={styles.emptySectionText}>Your client contacts will appear here</Text>
           </View>
         ) : (
-          contacts.map((item) => (
-            <Pressable
-              key={item.user_id}
-              style={({ pressed }) => [styles.contactItem, pressed && styles.contactItemPressed]}
-              onPress={() => handleContactPress(item)}
-            >
-              <View style={styles.contactAvatar}>
-                <Text style={styles.contactAvatarText}>
-                  {item.company_name.charAt(0).toUpperCase()}
-                </Text>
-                <View style={styles.onlineDot} />
-              </View>
-              <View style={styles.contactInfo}>
-                <Text style={styles.contactName}>{item.company_name}</Text>
-                <Text style={styles.contactSubtext}>Tap to start chatting</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
-            </Pressable>
-          ))
+          contacts.map((item) => {
+            const unread = unreadBySenderId[item.user_id] ?? 0;
+            return (
+              <Pressable
+                key={item.user_id}
+                style={({ pressed }) => [styles.contactItem, pressed && styles.contactItemPressed]}
+                onPress={() => handleContactPress(item)}
+              >
+                <View style={styles.contactAvatar}>
+                  <Text style={styles.contactAvatarText}>
+                    {item.company_name.charAt(0).toUpperCase()}
+                  </Text>
+                  <View style={styles.onlineDot} />
+                  {unread > 0 ? (
+                    <View style={styles.contactUnreadBadge}>
+                      <Text style={styles.contactUnreadBadgeText}>{unread > 99 ? '99+' : unread}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <View style={styles.contactInfo}>
+                  <Text style={[styles.contactName, unread > 0 && styles.contactNameUnread]}>
+                    {item.company_name}
+                  </Text>
+                  <Text style={[styles.contactSubtext, unread > 0 && styles.contactSubtextUnread]}>
+                    {unread > 0 ? `${unread} unread message${unread === 1 ? '' : 's'}` : 'Tap to start chatting'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
+              </Pressable>
+            );
+          })
         )}
 
         <View style={[styles.sectionHeader, { marginTop: 8 }]}>
@@ -395,10 +410,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: TEXT_PRIMARY,
   },
+  contactNameUnread: {
+    fontWeight: '800',
+    color: '#0F172A',
+  },
   contactSubtext: {
     fontSize: 12,
     color: TEXT_SECONDARY,
     marginTop: 2,
+  },
+  contactSubtextUnread: {
+    fontWeight: '600',
+    color: TEAL,
+  },
+  contactUnreadBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  contactUnreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
   ticketItem: {
     flexDirection: 'row',

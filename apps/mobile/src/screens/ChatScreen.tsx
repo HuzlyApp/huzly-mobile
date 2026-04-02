@@ -1,5 +1,5 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -41,6 +41,7 @@ import {
   uploadSupportTicketAttachment,
 } from '@/lib/support/support-tickets.service';
 import { getAIResponse } from '@/lib/ai/xai.service';
+import { useMessageNotifications } from '@/contexts/MessageNotificationsContext';
 
 const BG = '#FFFFFF';
 const CHAT_BG = '#FFFFFF';
@@ -80,6 +81,7 @@ export default function ChatScreen() {
   }>();
 
   const { user, loading: authLoading } = useAuthSession() as { user: AuthUser | null; loading: boolean };
+  const { setActiveChatPartnerId, notifyConversationOpened } = useMessageNotifications();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -288,6 +290,15 @@ export default function ChatScreen() {
       }
     };
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!receiver_id) return;
+      setActiveChatPartnerId(receiver_id);
+      void notifyConversationOpened(receiver_id);
+      return () => setActiveChatPartnerId(null);
+    }, [receiver_id, setActiveChatPartnerId, notifyConversationOpened]),
+  );
 
   useEffect(() => {
     if (authLoading) {

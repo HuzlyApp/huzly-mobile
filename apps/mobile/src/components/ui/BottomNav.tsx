@@ -1,7 +1,9 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
+
+import { useMessageNotificationsOptional } from '@/contexts/MessageNotificationsContext';
 
 const TEAL = '#0D9488';
 
@@ -11,6 +13,8 @@ interface Props {
 
 export default function BottomNav({ active = 'message' }: Props) {
   const router = useRouter();
+  const messageNotif = useMessageNotificationsOptional();
+  const unreadTotal = messageNotif?.totalUnread ?? 0;
 
   const items: { name: string; icon: string; label: string; route?: string }[] = [
     { name: 'home', icon: 'home', label: 'Dashboard', route: '/onboarding-steps' },
@@ -25,15 +29,21 @@ export default function BottomNav({ active = 'message' }: Props) {
       {items.map((item) => {
         const isActive = item.name === active;
         const iconName = isActive ? item.icon : `${item.icon}-outline`;
+        const showBadge = item.name === 'message' && unreadTotal > 0;
         return (
           <Pressable
             key={item.name}
             style={styles.item}
             accessibilityRole="button"
-            onPress={() => item.route && router.push(item.route)}
+            onPress={() => item.route && router.push(item.route as Href)}
           >
             <View style={[styles.iconWrap, isActive && styles.iconWrapActive]}>
               <Ionicons name={iconName as any} size={20} color={isActive ? '#FFFFFF' : '#94A3B8'} />
+              {showBadge ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{unreadTotal > 99 ? '99+' : String(unreadTotal)}</Text>
+                </View>
+              ) : null}
             </View>
             <Text style={[styles.label, isActive && styles.labelActive]}>{item.label}</Text>
           </Pressable>
@@ -68,6 +78,25 @@ const styles = StyleSheet.create({
   },
   iconWrapActive: {
     backgroundColor: TEAL,
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
   },
   label: {
     fontSize: 10,
