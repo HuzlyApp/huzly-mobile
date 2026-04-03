@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const TEAL = '#0D9488';
+const DEFAULT_EMPLOYER_SEND = '#4473C0';
 
 type SelectedFile = {
   name: string;
@@ -16,10 +17,15 @@ interface Props {
   onSend: () => void;
   sending?: boolean;
   onAttachPress?: () => void;
+  /** Shown when `variant` is `employer` (Figma: mic + composer). */
+  onMicPress?: () => void;
   selectedFile?: SelectedFile | null;
   onClearAttachment?: () => void;
   uploading?: boolean;
   uploadError?: string | null;
+  /** `employer`: mic-led toolbar and blue send (in-app messaging designs). */
+  variant?: 'default' | 'employer';
+  sendButtonColor?: string;
 }
 
 export default function MessageInput({
@@ -28,18 +34,34 @@ export default function MessageInput({
   onSend,
   sending,
   onAttachPress,
+  onMicPress,
   selectedFile,
   onClearAttachment,
   uploading,
   uploadError,
+  variant = 'default',
+  sendButtonColor,
 }: Props) {
   const disabled = (!value.trim() && !selectedFile) || sending || uploading;
+  const employer = variant === 'employer';
+  const sendBg = sendButtonColor ?? (employer ? DEFAULT_EMPLOYER_SEND : TEAL);
 
   return (
     <View style={styles.container}>
-      <Pressable style={styles.iconButton} onPress={onAttachPress} accessibilityLabel="Attach">
-        <Ionicons name="attach" size={22} color="#94A3B8" />
-      </Pressable>
+      {employer ? (
+        <Pressable
+          style={styles.iconButton}
+          onPress={onMicPress ?? (() => {})}
+          accessibilityLabel="Voice message"
+        >
+          <Ionicons name="mic-outline" size={22} color="#64748B" />
+        </Pressable>
+      ) : null}
+      {onAttachPress ? (
+        <Pressable style={styles.iconButton} onPress={onAttachPress} accessibilityLabel="Attach">
+          <Ionicons name="attach" size={22} color="#94A3B8" />
+        </Pressable>
+      ) : null}
 
       <View style={styles.inputWrapper}>
         {selectedFile ? (
@@ -68,7 +90,7 @@ export default function MessageInput({
       </View>
 
       <Pressable
-        style={[styles.sendButton, disabled && styles.sendDisabled]}
+        style={[styles.sendButton, { backgroundColor: sendBg }, disabled && styles.sendDisabled]}
         onPress={onSend}
         disabled={disabled}
         accessibilityLabel="Send"
@@ -119,7 +141,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: TEAL,
     justifyContent: 'center',
     alignItems: 'center',
   },

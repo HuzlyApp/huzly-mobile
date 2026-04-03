@@ -1,51 +1,87 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 
 import { useMessageNotificationsOptional } from '@/contexts/MessageNotificationsContext';
 
-const TEAL = '#0D9488';
+/** Selected tab: light pill + blue glyph/label (all items match messaging) */
+const NAV_ACTIVE_BLUE = '#2563EB';
+const NAV_ACTIVE_PILL_BG = '#DBEAFE';
+
+const DASHBOARD_LOGO = require('../../../public/dashboard.png');
+const BROWSE_LOGO = require('../../../public/browse.png');
+const JOBS_LOGO = require('../../../public/jobs.png');
+const CHAT_LOGO = require('../../../public/chat.png');
 
 interface Props {
   active?: 'home' | 'explore' | 'jobs' | 'message' | 'profile';
 }
 
-export default function BottomNav({ active = 'message' }: Props) {
+type NavItem = {
+  name: NonNullable<Props['active']>;
+  label: string;
+  route?: string;
+  /** Bundled PNG from `public/` — tinted like other bar icons */
+  imageSource?: number;
+  /** Ionicons base name when `imageSource` is omitted */
+  icon?: string;
+};
+
+export default function BottomNav({ active }: Props) {
   const router = useRouter();
   const messageNotif = useMessageNotificationsOptional();
   const unreadTotal = messageNotif?.totalUnread ?? 0;
 
-  const items: { name: string; icon: string; label: string; route?: string }[] = [
-    { name: 'home', icon: 'home', label: 'Dashboard', route: '/onboarding-steps' },
-    { name: 'explore', icon: 'paper-plane', label: 'Browse', route: '/explore' },
-    { name: 'jobs', icon: 'briefcase', label: 'My Jobs', route: '/job-roles' },
-    { name: 'message', icon: 'chatbubble', label: 'Message', route: '/messaging' },
-    { name: 'profile', icon: 'person', label: 'Profile', route: '/profile' },
+  const items: NavItem[] = [
+    { name: 'home', label: 'Dashboard', route: '/onboarding-steps', imageSource: DASHBOARD_LOGO },
+    /** Must include (tabs) group or navigation falls back to the default tab (home / Apply as Worker). */
+    { name: 'explore', label: 'Browse', route: '/(tabs)/explore', imageSource: BROWSE_LOGO },
+    { name: 'jobs', label: 'My Jobs', route: '/job-roles', imageSource: JOBS_LOGO },
+    { name: 'message', label: 'Message', route: '/messaging', imageSource: CHAT_LOGO },
+    { name: 'profile', label: 'Profile', route: '/profile', icon: 'person' },
   ];
 
   return (
     <View style={styles.container}>
       {items.map((item) => {
-        const isActive = item.name === active;
-        const iconName = isActive ? item.icon : `${item.icon}-outline`;
-        const showBadge = item.name === 'message' && unreadTotal > 0;
+        const isActive = active != null && item.name === active;
+        const isMessage = item.name === 'message';
+        const iconName =
+          item.icon != null ? (isActive ? item.icon : `${item.icon}-outline`) : 'ellipse';
+        const showBadge = isMessage && unreadTotal > 0;
+        const iconWrapStyle = [styles.iconWrap, isActive && styles.iconWrapActive];
+        const navImageTint = isActive ? NAV_ACTIVE_BLUE : '#94A3B8';
         return (
           <Pressable
             key={item.name}
             style={styles.item}
             accessibilityRole="button"
-            onPress={() => item.route && router.push(item.route as Href)}
+            onPress={() => {
+              if (!item.route) return;
+              /** navigate (not push) so stack screens e.g. onboarding open the tab group on the right tab, not default Home. */
+              router.navigate(item.route as Href);
+            }}
           >
-            <View style={[styles.iconWrap, isActive && styles.iconWrapActive]}>
-              <Ionicons name={iconName as any} size={20} color={isActive ? '#FFFFFF' : '#94A3B8'} />
+            <View style={iconWrapStyle}>
+              {item.imageSource != null ? (
+                <Image
+                  source={item.imageSource}
+                  style={[styles.navIconImage, { tintColor: navImageTint }]}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Ionicons name={iconName as any} size={20} color={isActive ? NAV_ACTIVE_BLUE : '#94A3B8'} />
+              )}
               {showBadge ? (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{unreadTotal > 99 ? '99+' : String(unreadTotal)}</Text>
                 </View>
               ) : null}
             </View>
-            <Text style={[styles.label, isActive && styles.labelActive]}>{item.label}</Text>
+            <Text style={[styles.label, isActive && styles.labelActive]}>
+              {item.label}
+            </Text>
           </Pressable>
         );
       })}
@@ -77,7 +113,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   iconWrapActive: {
-    backgroundColor: TEAL,
+    backgroundColor: NAV_ACTIVE_PILL_BG,
+  },
+  navIconImage: {
+    width: 22,
+    height: 22,
   },
   badge: {
     position: 'absolute',
@@ -104,7 +144,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   labelActive: {
-    color: '#0F172A',
+    color: NAV_ACTIVE_BLUE,
     fontWeight: '600',
   },
 });

@@ -1,3 +1,3 @@
-import SupportTicketReceiptScreen from '@/screens/SupportTicketReceiptScreen';
+import SupportTicketDetailScreen from '@/screens/support/SupportTicketDetailScreen';
 
-export default SupportTicketReceiptScreen;
+export default SupportTicketDetailScreen;

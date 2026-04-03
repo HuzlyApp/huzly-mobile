@@ -101,6 +101,31 @@ export async function fetchContacts(): Promise<ServiceResult<Contact[]>> {
   }
 }
 
+/** Resolve `clients.user_id` for messaging when shift embed is unavailable. */
+export async function fetchClientMessagingRecipient(
+  clientId: string,
+): Promise<ServiceResult<{ user_id: string; company_name: string }>> {
+  try {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('user_id, company_name')
+      .eq('id', clientId)
+      .maybeSingle();
+
+    if (error) return { data: null, error: error.message };
+    if (!data?.user_id) return { data: null, error: null };
+    return {
+      data: {
+        user_id: data.user_id,
+        company_name: (data.company_name ?? '').trim() || 'Employer',
+      },
+      error: null,
+    };
+  } catch (err: unknown) {
+    return { data: null, error: err instanceof Error ? err.message : 'Failed to load client' };
+  }
+}
+
 // ─── Fetch Conversations ─────────────────────────────────────────────────────
 
 /**

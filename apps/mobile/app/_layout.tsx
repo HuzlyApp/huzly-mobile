@@ -1,3 +1,4 @@
+import { MessageNotificationsProvider } from '@/contexts/MessageNotificationsContext';
 import { RequirementsUploadProvider } from '@/stores/RequirementsUploadContext';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, router, useSegments } from 'expo-router';
@@ -54,11 +55,15 @@ export default function RootLayout() {
     if (inPublicFlow) return;
 
     /**
-     * If user has session → go to main app
+     * If user has session → send them into the main app only from auth entry screens.
+     * Avoid router.replace('/(tabs)') on every segment change: that resets the tab stack
+     * to the default Home tab and breaks Browse → Explore (and keeps web URL on `/`).
      */
-
     if (session) {
-      router.replace('/(tabs)');
+      const entry = segments[0];
+      if (entry === 'welcome' || entry === 'auth') {
+        router.replace('/(tabs)');
+      }
       return;
     }
 
@@ -73,34 +78,39 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <RequirementsUploadProvider>
-        <Stack screenOptions={{ headerShown: false }}>
+        <MessageNotificationsProvider>
+          <Stack screenOptions={{ headerShown: false }}>
 
-          {/* Public */}
-          <Stack.Screen name="welcome" />
-          <Stack.Screen name="auth" />
+            {/* Public */}
+            <Stack.Screen name="welcome" />
+            <Stack.Screen name="auth" />
 
-          {/* Main App */}
-          <Stack.Screen name="(tabs)" />
+            {/* Main App */}
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="shift" />
+            <Stack.Screen name="directions" />
+            <Stack.Screen name="explore-map" />
 
-          {/* Messaging */}
-          <Stack.Screen name="messaging" /> 
-          <Stack.Screen name="support" />
+            {/* Messaging */}
+            <Stack.Screen name="messaging" />
+            <Stack.Screen name="support" />
 
-          {/* Profile */}
-          <Stack.Screen name="profile" />
-          <Stack.Screen name="profile-menu" />
-          <Stack.Screen name="help-centre" />
+            {/* Profile */}
+            <Stack.Screen name="profile" />
+            <Stack.Screen name="profile-menu" />
+            <Stack.Screen name="help-centre" />
 
-          {/* Onboarding */}
-          <Stack.Screen name="onboarding-steps" />
-          <Stack.Screen name="job-roles" />
-          <Stack.Screen name="requirements" />
-          <Stack.Screen name="resume-upload" />
-          <Stack.Screen name="resume-review" />
-          <Stack.Screen name="payment-method" />
-          <Stack.Screen name="acknowledgement" />
+            {/* Onboarding */}
+            <Stack.Screen name="onboarding-steps" />
+            <Stack.Screen name="job-roles" />
+            <Stack.Screen name="requirements" />
+            <Stack.Screen name="resume-upload" />
+            <Stack.Screen name="resume-review" />
+            <Stack.Screen name="payment-method" />
+            <Stack.Screen name="acknowledgement" />
 
-        </Stack>
+          </Stack>
+        </MessageNotificationsProvider>
       </RequirementsUploadProvider>
 
       <StatusBar style="auto" />

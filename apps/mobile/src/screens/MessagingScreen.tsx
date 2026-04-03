@@ -2,7 +2,6 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState, useEffect } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,10 +12,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { fetchContacts, type Contact } from '@/lib/messages/messages.service';
-import {
-  fetchSupportTicketsByUser,
-  type SupportTicket,
-} from '@/lib/support/support-tickets.service';
 import { useAuthSession } from '@/hooks/use-auth-session';
 import BottomNav from '@/components/ui/BottomNav';
 import { useMessageNotifications } from '@/contexts/MessageNotificationsContext';
@@ -27,6 +22,8 @@ const TEXT_PRIMARY = '#1E293B';
 const TEXT_SECONDARY = '#64748B';
 const BORDER = '#E6EEF6';
 const TEAL = '#0D9488';
+const NAVY = '#1E3A5F';
+const BLUE = '#2563EB';
 
 export default function MessagingScreen() {
   const router = useRouter();
@@ -34,7 +31,6 @@ export default function MessagingScreen() {
   const { session, loading: authLoading } = useAuthSession();
   const { unreadBySenderId, refreshUnreadCounts } = useMessageNotifications();
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,10 +50,7 @@ export default function MessagingScreen() {
       setLoading(true);
       setError(null);
 
-      const [contactsResult, ticketsResult] = await Promise.all([
-        fetchContacts(),
-        fetchSupportTicketsByUser(session.user.id),
-      ]);
+      const contactsResult = await fetchContacts();
 
       if (contactsResult.error) {
         setError(contactsResult.error);
@@ -65,11 +58,6 @@ export default function MessagingScreen() {
         setContacts(contactsResult.data || []);
       }
 
-      if (ticketsResult.error) {
-        setError(ticketsResult.error);
-      } else {
-        setTickets(ticketsResult.data || []);
-      }
       setLoading(false);
     };
 
@@ -80,21 +68,12 @@ export default function MessagingScreen() {
     useCallback(() => {
       if (!authLoading && session?.user) {
         const refreshData = async () => {
-          const [contactsResult, ticketsResult] = await Promise.all([
-            fetchContacts(),
-            fetchSupportTicketsByUser(session.user.id),
-          ]);
+          const contactsResult = await fetchContacts();
 
           if (contactsResult.error) {
             setError(contactsResult.error);
           } else {
             setContacts(contactsResult.data || []);
-          }
-
-          if (ticketsResult.error) {
-            setError(ticketsResult.error);
-          } else {
-            setTickets(ticketsResult.data || []);
           }
         };
         refreshData();
@@ -111,23 +90,6 @@ export default function MessagingScreen() {
         receiver_name: contact.company_name,
       },
     });
-  };
-
-  const handleTicketPress = (ticket: SupportTicket) => {
-    router.push(`/support/ticket/${ticket.id}`);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'open':
-        return '#F59E0B';
-      case 'in progress':
-        return '#3B82F6';
-      case 'resolved':
-        return '#10B981';
-      default:
-        return TEXT_SECONDARY;
-    }
   };
 
   if (loading) {
@@ -157,7 +119,11 @@ export default function MessagingScreen() {
         <View style={styles.successContainer}>
           <Ionicons name="checkmark-circle" size={16} color="#166534" style={{ marginRight: 6 }} />
           <Text style={styles.successText}>
-            Ticket submitted. Expect a response within 24 hours.
+            Ticket submitted. Open{' '}
+            <Text style={styles.successLink} onPress={() => router.push('/support' as any)}>
+              My Tickets
+            </Text>{' '}
+            to track it.
           </Text>
         </View>
       )}
@@ -214,42 +180,19 @@ export default function MessagingScreen() {
           })
         )}
 
-        <View style={[styles.sectionHeader, { marginTop: 8 }]}>
-          <Ionicons name="ticket-outline" size={18} color={TEAL} style={{ marginRight: 6 }} />
-          <Text style={styles.sectionTitle}>Support Tickets</Text>
-          <Text style={styles.sectionBadge}>{tickets.length}</Text>
-        </View>
-
-        {tickets.length === 0 ? (
-          <View style={styles.emptySection}>
-            <Ionicons name="document-text-outline" size={32} color="#CBD5E1" />
-            <Text style={styles.emptySectionTitle}>No Tickets</Text>
-            <Text style={styles.emptySectionText}>Support tickets you create will appear here</Text>
+        <Pressable
+          style={({ pressed }) => [styles.ticketsHubCard, pressed && styles.ticketsHubCardPressed]}
+          onPress={() => router.push('/support' as any)}
+        >
+          <View style={styles.ticketsHubIcon}>
+            <Ionicons name="headset" size={22} color="#FFFFFF" />
           </View>
-        ) : (
-          tickets.map((item) => (
-            <Pressable
-              key={item.id}
-              style={({ pressed }) => [styles.ticketItem, pressed && styles.ticketItemPressed]}
-              onPress={() => handleTicketPress(item)}
-            >
-              <View style={styles.ticketContent}>
-                <Text style={styles.ticketSubject} numberOfLines={1}>
-                  {item.subject || 'Support Request'}
-                </Text>
-                <View style={styles.ticketMetaRow}>
-                  <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
-                  <Text style={styles.ticketMeta}>{item.status}</Text>
-                  <Text style={styles.ticketMetaDivider}>•</Text>
-                  <Text style={styles.ticketMeta}>
-                    {new Date(item.created_at).toLocaleDateString()}
-                  </Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
-            </Pressable>
-          ))
-        )}
+          <View style={styles.ticketsHubTextWrap}>
+            <Text style={styles.ticketsHubTitle}>My Tickets</Text>
+            <Text style={styles.ticketsHubSub}>View open and closed support tickets</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
+        </Pressable>
 
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -321,6 +264,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
   },
+  successLink: {
+    fontWeight: '800',
+    color: BLUE,
+    textDecorationLine: 'underline',
+  },
   scrollContent: {
     flex: 1,
   },
@@ -336,16 +284,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: TEXT_PRIMARY,
   },
-  sectionBadge: {
-    marginLeft: 8,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    fontSize: 12,
-    fontWeight: '600',
+  ticketsHubCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: BG,
+  },
+  ticketsHubCardPressed: {
+    backgroundColor: SURFACE,
+  },
+  ticketsHubIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: NAVY,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  ticketsHubTextWrap: { flex: 1 },
+  ticketsHubTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: NAVY,
+  },
+  ticketsHubSub: {
+    marginTop: 2,
+    fontSize: 13,
     color: TEXT_SECONDARY,
-    overflow: 'hidden',
   },
   emptySection: {
     alignItems: 'center',
@@ -441,46 +413,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '800',
-  },
-  ticketItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: BG,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  ticketItemPressed: {
-    backgroundColor: '#F8FAFC',
-  },
-  ticketContent: {
-    flex: 1,
-    marginRight: 8,
-  },
-  ticketSubject: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: TEXT_PRIMARY,
-    marginBottom: 4,
-  },
-  ticketMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  ticketMeta: {
-    fontSize: 12,
-    color: TEXT_SECONDARY,
-  },
-  ticketMetaDivider: {
-    fontSize: 12,
-    color: '#CBD5E1',
-    marginHorizontal: 6,
   },
 });

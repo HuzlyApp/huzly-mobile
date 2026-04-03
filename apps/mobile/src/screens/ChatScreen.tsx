@@ -11,6 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import type { User } from '@supabase/supabase-js';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
@@ -19,6 +20,7 @@ import MessageBubble from '@/components/ui/MessageBubble';
 import MessageInput from '@/components/ui/MessageInput';
 import TypingIndicator from '@/components/ui/TypingIndicator';
 import BottomNav from '@/components/ui/BottomNav';
+
 import {
   fetchMessages,
   sendMessage,
@@ -40,11 +42,18 @@ import {
   fetchWorkerTicketCategories,
   uploadSupportTicketAttachment,
 } from '@/lib/support/support-tickets.service';
-import { getAIResponse } from '@/lib/ai/xai.service';
+import {
+  applyEscalationAfterUserMessage,
+  createEscalationAccumulator,
+  heuristicEmotionScores,
+  isExplicitAgentRequest,
+  mergeEmotionScores,
+} from '@/lib/ai/agent-escalation';
+import { analyzeUserEmotionForEscalation, getAIResponse } from '@/lib/ai/xai.service';
 import { useMessageNotifications } from '@/contexts/MessageNotificationsContext';
 
 const BG = '#FFFFFF';
-const CHAT_BG = '#FFFFFF';
+const CHAT_BG = '#F8FAFC';
 const PRIMARY = '#4473C0';
 const TEAL = '#0D9488';
 const TEXT_PRIMARY = '#1E293B';
@@ -67,20 +76,31 @@ interface ChatMessage {
   } | null;
 }
 
-interface AuthUser {
-  id: string;
-}
-
 const AI_SENDER_ID = '__ai_agent__';
+
+function workerFirstName(u: User | null): string {
+  if (!u) return 'there';
+  const meta = u.user_metadata as Record<string, unknown> | undefined;
+  const full =
+    typeof meta?.full_name === 'string'
+      ? meta.full_name
+      : typeof meta?.name === 'string'
+        ? meta.name
+        : '';
+  const first = full.trim().split(/\s+/)[0];
+  return first || 'there';
+}
 
 export default function ChatScreen() {
   const router = useRouter();
-  const { receiver_id, receiver_name } = useLocalSearchParams<{
+  const params = useLocalSearchParams<{
     receiver_id: string;
     receiver_name: string;
   }>();
+  const receiver_id = Array.isArray(params.receiver_id) ? params.receiver_id[0] : params.receiver_id;
+  const receiver_name = Array.isArray(params.receiver_name) ? params.receiver_name[0] : params.receiver_name;
 
-  const { user, loading: authLoading } = useAuthSession() as { user: AuthUser | null; loading: boolean };
+  const { user, loading: authLoading } = useAuthSession() as { user: User | null; loading: boolean };
   const { setActiveChatPartnerId, notifyConversationOpened } = useMessageNotifications();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -97,6 +117,8 @@ export default function ChatScreen() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const aiTypingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const escalationAccRef = useRef(createEscalationAccumulator());
+  const [agentEscalationButtonVisible, setAgentEscalationButtonVisible] = useState(false);
 
   const FALLBACK_MS = 20 * 1000;
 
@@ -166,11 +188,22 @@ export default function ChatScreen() {
     };
   }, [user?.id]);
 
+  const displayPeerName = useMemo(() => {
+    const n = receiver_name?.trim();
+    if (n) return n;
+    return 'Employer';
+  }, [receiver_name]);
+
   const chatPartnerLabel = useMemo(() => {
     if (!receiver_id) return undefined;
     if (receiver_name) return `${receiver_name} (${receiver_id})`;
     return receiver_id;
   }, [receiver_id, receiver_name]);
+
+  const peerInitial = useMemo(
+    () => (displayPeerName.trim().charAt(0) || '?').toUpperCase(),
+    [displayPeerName],
+  );
 
   const showFallbackCard = chatMode === 'human' && fallbackAvailable && ticketCreatedForContext === false;
 
@@ -278,7 +311,7 @@ export default function ChatScreen() {
     setTicketModalVisible(false);
     setTicketCreatedForContext(true);
 
-    router.push(`/support/ticket/${ticket.id}`);
+    router.replace({ pathname: '/support/success', params: { id: ticket.id } } as any);
   };
 
   // Ensure we never leave a running typing interval after unmount.
@@ -358,18 +391,11 @@ export default function ChatScreen() {
 
   const handleGetStarted = () => {
     setChatStarted(true);
+    const fn = workerFirstName(user);
     const introMessages: ChatMessage[] = [
       {
         id: `ai-intro-1-${Date.now()}`,
-        content: `Hi, ${user?.id ? 'John' : 'there'}! We're happy to help. When you're ready, click "Get Started" below to begin.`,
-        sender_id: AI_SENDER_ID,
-        receiver_id: user?.id || '',
-        sent_at: new Date().toISOString(),
-        isAI: true,
-      },
-      {
-        id: `ai-intro-2-${Date.now()}`,
-        content: 'Please provide as much information as you can–such as the pro\'s name, shift date/time, shift position, and invoice amount–so we can look into your inquiry. Thank you!',
+        content: `Hi, ${fn}! You're connected with ${displayPeerName}. Send a message below whenever you're ready.`,
         sender_id: AI_SENDER_ID,
         receiver_id: user?.id || '',
         sent_at: new Date().toISOString(),
@@ -481,7 +507,26 @@ export default function ChatScreen() {
       scrollToEnd();
 
       setAiTyping(true);
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      const processEmotionForEscalation = async () => {
+        if (!textToSend.trim()) return;
+        const heur = heuristicEmotionScores(textToSend);
+        const api = await analyzeUserEmotionForEscalation(textToSend);
+        const merged = mergeEmotionScores(
+          heur,
+          api ? { frustration: api.frustration, anger: api.anger } : null,
+        );
+        const explicitBlocked =
+          isExplicitAgentRequest(textToSend) || (api?.explicit_human_request ?? false);
+        const acc = escalationAccRef.current;
+        const prevVisible = acc.buttonVisible;
+        applyEscalationAfterUserMessage(acc, merged, explicitBlocked);
+        if (acc.buttonVisible !== prevVisible) {
+          setAgentEscalationButtonVisible(acc.buttonVisible);
+        }
+      };
+
+      await Promise.all([new Promise((resolve) => setTimeout(resolve, 1500)), processEmotionForEscalation()]);
       const { reply, error: aiError } = await getAIResponse(aiPrompt || 'User sent a file');
       setAiTyping(false);
 
@@ -553,12 +598,13 @@ export default function ChatScreen() {
     await createSupportTicket({
       userId: user.id,
       subject: 'Live Support Request',
-      description: 'User requested human agent',
+      description:
+        'Escalated from AI chat after frustration/anger signals met threshold (emotion-based routing; not a manual agent request).',
     });
 
     const systemMsg: ChatMessage = {
       id: `system-${Date.now()}`,
-      content: 'You have been connected to a live agent. Please wait for a response.',
+      content: "You're now connected with a live agent. They'll reply here shortly.",
       sender_id: AI_SENDER_ID,
       receiver_id: user.id,
       sent_at: new Date().toISOString(),
@@ -575,34 +621,43 @@ export default function ChatScreen() {
         message={item as Message}
         isOwn={isOwn}
         isAI={item.isAI}
+        peerLabel={displayPeerName}
       />
     );
   };
 
-  const renderGetStarted = () => (
-    <View style={styles.getStartedContainer}>
-      <Text style={styles.helpPrompt}>Have a question? Send us a message</Text>
+  const welcomeFirstName = workerFirstName(user);
 
+  const renderGetStarted = () => (
+    <View style={styles.preChatWrap}>
       <View style={styles.aiIntroRow}>
         <View style={styles.aiAvatarSmall}>
-          <Ionicons name="person" size={14} color="#FFFFFF" />
+          <Text style={styles.aiAvatarLetter}>{peerInitial}</Text>
         </View>
         <View style={styles.aiIntroBubble}>
           <Text style={styles.aiIntroText}>
-            Hi, John! We're happy to help. When you're ready, click "Get Started" below to begin.
+            Hi, {welcomeFirstName}! Thanks for your message. Please let us know how we can help? When you're ready, tap
+            "Get Started" below to begin.
           </Text>
-          <Text style={styles.aiIntroMeta}>AI Agent • Just now</Text>
+          <Text style={styles.aiIntroMeta}>
+            {displayPeerName} •{' '}
+            {new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+          </Text>
         </View>
       </View>
 
       <Pressable
-        style={({ pressed }) => [styles.getStartedBtn, pressed && { opacity: 0.85 }]}
+        style={({ pressed }) => [styles.getStartedFab, pressed && { opacity: 0.88 }]}
         onPress={handleGetStarted}
       >
-        <Text style={styles.getStartedBtnText}>Get Started</Text>
+        <Text style={styles.getStartedFabText}>Get Started</Text>
       </Pressable>
     </View>
   );
+
+  const onHeaderPhonePress = () => {
+    Alert.alert('Call employer', 'A phone number for this employer is not available in the app yet.');
+  };
 
   if (loading || loadError) {
     return (
@@ -614,12 +669,14 @@ export default function ChatScreen() {
             </Pressable>
             <View style={styles.headerCenter}>
               <View style={styles.headerAvatar}>
-                <Ionicons name="chatbubbles" size={18} color="#FFFFFF" />
+                <Text style={styles.headerAvatarLetter}>{peerInitial}</Text>
               </View>
-              <Text style={styles.headerTitle}>Chat Support</Text>
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {displayPeerName}
+              </Text>
             </View>
-            <Pressable style={styles.headerRightBtn}>
-              <Ionicons name="chatbubble-outline" size={20} color={TEXT_SECONDARY} />
+            <Pressable style={styles.headerRightBtn} onPress={onHeaderPhonePress} accessibilityLabel="Call employer">
+              <Ionicons name="call-outline" size={20} color={TEXT_SECONDARY} />
             </Pressable>
           </View>
           {loadError ? (
@@ -653,21 +710,22 @@ export default function ChatScreen() {
           </Pressable>
           <View style={styles.headerCenter}>
             <View style={styles.headerAvatar}>
-              <Ionicons name="chatbubbles" size={18} color="#FFFFFF" />
+              <Text style={styles.headerAvatarLetter}>{peerInitial}</Text>
             </View>
-            <Text style={styles.headerTitle}>Chat Support</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {displayPeerName}
+            </Text>
           </View>
-          <Pressable style={styles.headerRightBtn}>
-            <Ionicons name="chatbubble-outline" size={20} color={TEXT_SECONDARY} />
+          <Pressable style={styles.headerRightBtn} onPress={onHeaderPhonePress} accessibilityLabel="Call employer">
+            <Ionicons name="call-outline" size={20} color={TEXT_SECONDARY} />
           </Pressable>
         </View>
 
         {!chatStarted && messages.length === 0 ? (
-          <>
+          <View style={styles.preChatRoot}>
             {renderGetStarted()}
-            <View style={{ flex: 1 }} />
             <BottomNav active="message" />
-          </>
+          </View>
         ) : (
           <>
             {sendError ? (
@@ -676,13 +734,27 @@ export default function ChatScreen() {
               </View>
             ) : null}
 
+            {chatStarted ? (
+              <View style={styles.threadPills}>
+                <View style={styles.threadPill}>
+                  <Text style={styles.threadPillText}>Chat with Employer</Text>
+                </View>
+                {chatMode === 'human' ? (
+                  <View style={styles.threadPill}>
+                    <Text style={styles.threadPillText}>You are now talking to Agent</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
             <FlatList
               ref={flatListRef}
+              style={styles.messageList}
               data={messages}
               renderItem={renderMessageItem}
               keyExtractor={(item) => item.id}
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingVertical: 12 }}
+              contentContainerStyle={styles.messageListContent}
               onContentSizeChange={() => scrollToEnd()}
             />
 
@@ -695,15 +767,18 @@ export default function ChatScreen() {
               </View>
             )}
 
-            {chatMode === 'ai' && (
-              <Pressable
-                style={({ pressed }) => [styles.chatWithAgentBtn, pressed && { opacity: 0.85 }]}
-                onPress={handleChatWithAgent}
-              >
-                <Ionicons name="chatbubble-ellipses-outline" size={16} color={PRIMARY} />
-                <Text style={styles.chatWithAgentText}>Chat with Agent</Text>
-              </Pressable>
-            )}
+            {chatMode === 'ai' && agentEscalationButtonVisible ? (
+              <View style={styles.chatWithAgentBlock}>
+                <Pressable
+                  style={({ pressed }) => [styles.chatWithAgentBtn, pressed && { opacity: 0.85 }]}
+                  onPress={handleChatWithAgent}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={16} color={PRIMARY} />
+                  <Text style={styles.chatWithAgentText}>Chat with Agent</Text>
+                </Pressable>
+                <Text style={styles.chatWithAgentHint}>Need more help? Talk to support.</Text>
+              </View>
+            ) : null}
 
             {chatMode === 'human' && secondsLeft !== null && !fallbackAvailable && ticketCreatedForContext !== true ? (
               <View style={styles.fallbackCountdownRow}>
@@ -728,6 +803,7 @@ export default function ChatScreen() {
             ) : null}
 
             <MessageInput
+              variant="employer"
               value={messageText}
               onChangeText={setMessageText}
               onSend={handleSendMessage}
@@ -783,28 +859,86 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: PRIMARY,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: TEAL,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerAvatarLetter: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
   headerTitle: {
     fontSize: 17,
     fontWeight: '700',
     color: TEXT_PRIMARY,
+    maxWidth: '62%',
   },
   headerRightBtn: {
     padding: 6,
   },
 
-  helpPrompt: {
-    fontSize: 13,
-    color: TEXT_SECONDARY,
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 16,
+  preChatRoot: {
+    flex: 1,
+    backgroundColor: CHAT_BG,
+  },
+  preChatWrap: {
+    flex: 1,
+    backgroundColor: CHAT_BG,
+    paddingTop: 8,
+  },
+  getStartedFab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 88,
+    backgroundColor: PRIMARY,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  getStartedFabText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  threadPills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: CHAT_BG,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  threadPill: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  threadPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  messageList: {
+    flex: 1,
+    backgroundColor: CHAT_BG,
+  },
+  messageListContent: {
+    paddingVertical: 12,
+    paddingBottom: 4,
   },
 
   aiIntroRow: {
@@ -818,9 +952,14 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: PRIMARY,
+    backgroundColor: TEAL,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  aiAvatarLetter: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   aiIntroBubble: {
     backgroundColor: RECEIVED_BG,
@@ -839,22 +978,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 11,
     color: '#94A3B8',
-  },
-
-  getStartedContainer: {
-    paddingTop: 4,
-  },
-  getStartedBtn: {
-    marginHorizontal: 16,
-    backgroundColor: PRIMARY,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  getStartedBtnText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
   },
 
   typingRow: {
@@ -877,12 +1000,14 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
 
+  chatWithAgentBlock: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
   chatWithAgentBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    marginHorizontal: 16,
-    marginBottom: 8,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
@@ -895,6 +1020,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: PRIMARY,
+  },
+  chatWithAgentHint: {
+    marginTop: 4,
+    fontSize: 11,
+    color: TEXT_SECONDARY,
+    paddingLeft: 2,
   },
 
   fallbackCountdownRow: {

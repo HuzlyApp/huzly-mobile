@@ -15,6 +15,8 @@ interface Props {
   message: Message;
   isOwn: boolean;
   isAI?: boolean;
+  /** Shown for incoming AI/assistant bubbles (e.g. employer company name). */
+  peerLabel?: string;
 }
 
 function getFileExtension(fileName: string): string {
@@ -40,7 +42,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function MessageBubble({ message, isOwn, isAI }: Props) {
+export default function MessageBubble({ message, isOwn, isAI, peerLabel }: Props) {
   const attachment = (message as any).attachments;
   const isImage = attachment && typeof attachment.fileType === 'string' && attachment.fileType.startsWith('image/');
   const hasText = !!message.content;
@@ -50,8 +52,17 @@ export default function MessageBubble({ message, isOwn, isAI }: Props) {
     Linking.openURL(attachment.fileUrl).catch(() => {});
   };
 
+  const peerTime =
+    message.sent_at &&
+    new Date(message.sent_at).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
   const timeLabel = isAI && !isOwn ? (
-    <Text style={styles.aiLabel}>AI Agent • Just now</Text>
+    <Text style={styles.aiLabel}>
+      {peerLabel ?? 'AI Agent'} • {peerTime || '—'}
+    </Text>
   ) : (
     <Text style={[styles.time, isOwn && styles.timeOwn]}>
       {new Date(message.sent_at).toLocaleTimeString([], {

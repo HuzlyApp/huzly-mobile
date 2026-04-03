@@ -176,7 +176,7 @@ export default function OnboardingStepsScreen() {
       </ScrollView>
 
       {/* Bottom navigation (same as messages) */}
-      <BottomNav />
+      <BottomNav active="home" />
     </SafeAreaView>
   );
 }

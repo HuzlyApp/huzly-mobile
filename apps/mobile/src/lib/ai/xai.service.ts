@@ -111,3 +111,79 @@ export async function getAIResponse(userMessage: string): Promise<{ reply: strin
 export function clearFaqCache() {
   cachedFaqs = null;
 }
+
+const EMOTION_SYSTEM = `You classify the emotional tone of a single user message in a support chat.
+Reply with ONLY a compact JSON object (no markdown, no prose) with these keys:
+- "frustration": number from 0 to 1 (how frustrated, stuck, or complaining about repeated failure)
+- "anger": number from 0 to 1 (how hostile, insulting, or furious)
+- "explicit_human_request": boolean (true ONLY if the user clearly asks to speak to a human, agent, live person, or be transferred to support — not merely upset)
+
+Use 0 for neutral or positive messages. Mild inconvenience without annoyance should stay under 0.35.`;
+
+export type EmotionApiResult = {
+  frustration: number;
+  anger: number;
+  explicit_human_request: boolean;
+};
+
+function parseEmotionJson(raw: string): EmotionApiResult | null {
+  const trimmed = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const frustration = Number(parsed.frustration);
+    const anger = Number(parsed.anger);
+    const explicit = Boolean(parsed.explicit_human_request);
+    if (!Number.isFinite(frustration) || !Number.isFinite(anger)) return null;
+    return {
+      frustration: Math.min(1, Math.max(0, frustration)),
+      anger: Math.min(1, Math.max(0, anger)),
+      explicit_human_request: explicit,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Optional xAI-based emotion scores; returns null if unconfigured or parse fails.
+ */
+export async function analyzeUserEmotionForEscalation(
+  userMessage: string,
+): Promise<EmotionApiResult | null> {
+  const apiKey = process.env.EXPO_PUBLIC_XAI_API_KEY;
+  if (!apiKey || !userMessage.trim()) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(XAI_API_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'grok-3-mini',
+        messages: [
+          { role: 'system', content: EMOTION_SYSTEM },
+          { role: 'user', content: userMessage.slice(0, 2000) },
+        ],
+        max_tokens: 120,
+        temperature: 0.2,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('XAI emotion API error:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const raw = data?.choices?.[0]?.message?.content?.trim();
+    if (!raw) return null;
+    return parseEmotionJson(raw);
+  } catch (err) {
+    console.error('XAI emotion fetch error:', err);
+    return null;
+  }
+}

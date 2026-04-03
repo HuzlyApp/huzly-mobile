@@ -210,3 +210,63 @@ export async function fetchSupportTicketsByUser(
     return { data: null, error: error?.message ?? 'Failed to load tickets.' };
   }
 }
+
+export function ticketIsOpen(t: SupportTicket): boolean {
+  return t.status === 'Open' || t.status === 'In Progress';
+}
+
+/** Appends a worker reply to `description` (no separate replies table). */
+export async function appendSupportTicketReply(
+  ticketId: string,
+  userId: string,
+  reply: string,
+): Promise<SupportTicketResult<SupportTicket>> {
+  const trimmed = reply.trim();
+  if (!trimmed) {
+    return { data: null, error: 'Reply is empty.' };
+  }
+
+  const existing = await fetchSupportTicketById(ticketId, userId);
+  if (existing.error || !existing.data) {
+    return { data: null, error: existing.error ?? 'Ticket not found.' };
+  }
+
+  const stamp = new Date().toLocaleString();
+  const block = `\n\n--- ${stamp} (you) ---\n${trimmed}`;
+  const nextDesc = `${existing.data.description ?? ''}${block}`;
+
+  try {
+    const { data, error } = await supabase
+      .from('support_tickets')
+      .update({ description: nextDesc })
+      .eq('id', ticketId)
+      .eq('user_id', userId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      return { data: null, error: error?.message ?? 'Could not save reply.' };
+    }
+
+    return { data: data as SupportTicket, error: null };
+  } catch (e: unknown) {
+    return { data: null, error: e instanceof Error ? e.message : 'Could not save reply.' };
+  }
+}
+
+export async function deleteSupportTicket(
+  ticketId: string,
+  userId: string,
+): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.from('support_tickets').delete().eq('id', ticketId).eq('user_id', userId);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    return { error: null };
+  } catch (e: unknown) {
+    return { error: e instanceof Error ? e.message : 'Failed to delete ticket.' };
+  }
+}

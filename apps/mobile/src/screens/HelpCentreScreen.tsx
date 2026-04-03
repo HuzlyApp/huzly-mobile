@@ -64,11 +64,8 @@ export default function HelpCentreScreen() {
           </View>
         </Pressable>
 
-        <Pressable
-          style={styles.actionCard}
-          onPress={() => router.push('/messaging' as any)}
-        >
-          <Text style={styles.actionCardText}>Open Ticket</Text>
+        <Pressable style={styles.actionCard} onPress={() => router.push('/support' as any)}>
+          <Text style={styles.actionCardText}>My Tickets</Text>
           <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
         </Pressable>
 
