@@ -45,7 +45,8 @@ export default function RootLayout() {
       segments[0] === 'support' ||
       segments[0] === 'profile' ||
       segments[0] === 'profile-menu' ||
-      segments[0] === 'help-centre';
+      segments[0] === 'help-centre' ||
+      segments[0] === 'my-jobs';
 
     /**
      * If user is already inside auth / welcome / onboarding
@@ -90,6 +91,7 @@ export default function RootLayout() {
             <Stack.Screen name="shift" />
             <Stack.Screen name="directions" />
             <Stack.Screen name="explore-map" />
+            <Stack.Screen name="my-jobs" />
 
             {/* Messaging */}
             <Stack.Screen name="messaging" />

@@ -37,7 +37,7 @@ export default function BottomNav({ active }: Props) {
     { name: 'home', label: 'Dashboard', route: '/onboarding-steps', imageSource: DASHBOARD_LOGO },
     /** Must include (tabs) group or navigation falls back to the default tab (home / Apply as Worker). */
     { name: 'explore', label: 'Browse', route: '/(tabs)/explore', imageSource: BROWSE_LOGO },
-    { name: 'jobs', label: 'My Jobs', route: '/job-roles', imageSource: JOBS_LOGO },
+    { name: 'jobs', label: 'My Jobs', route: '/my-jobs', imageSource: JOBS_LOGO },
     { name: 'message', label: 'Message', route: '/messaging', imageSource: CHAT_LOGO },
     { name: 'profile', label: 'Profile', route: '/profile', icon: 'person' },
   ];

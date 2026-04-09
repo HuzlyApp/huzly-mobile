@@ -328,6 +328,106 @@ export async function fetchShiftsPage(from: number): Promise<FetchShiftsPageResu
   }
 }
 
+/**
+ * Shifts the signed-in worker is assigned to (via `worker_shift_requirements` → `shift_requirements.shift_id`).
+ */
+export async function fetchWorkerAssignedShifts(
+  workerId: string,
+): Promise<{ data: ShiftBrowseItem[] | null; error: string | null }> {
+  try {
+    const { data: wsrRows, error: wsrError } = await supabase
+      .from('worker_shift_requirements')
+      .select('shift_requirement_id')
+      .eq('worker_id', workerId);
+
+    if (wsrError) {
+      return { data: null, error: wsrError.message };
+    }
+
+    const srIds = [
+      ...new Set(
+        (wsrRows ?? [])
+          .map((r) => (r as { shift_requirement_id?: string }).shift_requirement_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    if (srIds.length === 0) {
+      return { data: [], error: null };
+    }
+
+    const { data: srRows, error: srError } = await supabase
+      .from('shift_requirements')
+      .select('shift_id')
+      .in('id', srIds);
+
+    if (srError) {
+      return { data: null, error: srError.message };
+    }
+
+    const shiftIds = [
+      ...new Set(
+        (srRows ?? [])
+          .map((r) => (r as { shift_id?: string }).shift_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    if (shiftIds.length === 0) {
+      return { data: [], error: null };
+    }
+
+    const { data: rows, error } = await supabase
+      .from('shifts')
+      .select(
+        `
+        id,
+        title,
+        description,
+        start_date,
+        end_date,
+        rate_per_hour,
+        total_escrow,
+        number_of_people_needed,
+        weeks,
+        posted_at,
+        completed_at,
+        claimed_at,
+        facility_id,
+        facility ( ${FACILITY_EMBED_SELECT} ),
+        client_id,
+        job_category_id,
+        job_categories ( id, name, active ),
+        shift_requirements ( ${SHIFT_REQUIREMENTS_SELECT} )
+      `,
+      )
+      .in('id', shiftIds)
+      .is('completed_at', null)
+      .order('start_date', { ascending: true, nullsFirst: false });
+
+    if (error) {
+      console.error('[shifts-browse] worker assigned shifts:', error.message);
+      return { data: null, error: error.message };
+    }
+
+    const list = (rows ?? []) as ShiftBrowseRow[];
+    const missingFacilityIds = list
+      .filter((r) => r.facility_id && !normalizeEmbeddedFacility(r.facility))
+      .map((r) => r.facility_id as string);
+    const facilityMap = await fetchFacilitiesByIds(missingFacilityIds);
+
+    const merged: ShiftBrowseItem[] = list.map((row) => ({
+      ...row,
+      job_categories: normalizeCategory(row.job_categories),
+      shift_requirements: Array.isArray(row.shift_requirements) ? row.shift_requirements : [],
+      facility: resolveFacilityForRow(row, facilityMap),
+      employer_contact: normalizeEmployerContact(row.clients),
+    }));
+
+    return { data: merged, error: null };
+  } catch (e) {
+    return { data: null, error: e instanceof Error ? e.message : 'Failed to load your jobs' };
+  }
+}
+
 export async function fetchShiftById(id: string): Promise<{ data: ShiftBrowseItem | null; error: string | null }> {
   try {
     const { data: row, error } = await supabase

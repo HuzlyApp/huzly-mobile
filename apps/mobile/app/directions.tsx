@@ -273,7 +273,10 @@ export default function DirectionsScreen() {
           <View style={styles.iconBtn} />
         </View>
         <View style={styles.centerMsg}>
-          <Text style={styles.errText}>Mapbox token missing. Set MAPBOX_API_KEY in .env and restart Expo.</Text>
+          <Text style={styles.errText}>
+            Mapbox token missing. Set EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN or MAPBOX_API_KEY in apps/mobile/.env and restart
+            Expo.
+          </Text>
         </View>
         <BottomNav active="explore" />
       </SafeAreaView>
@@ -356,6 +359,7 @@ export default function DirectionsScreen() {
               accessToken={token}
               center={mapCenter}
               zoom={10}
+              fixedHeight={220}
               route={route}
               markers={[
                 { id: 'dest', lng: dest.lng, lat: dest.lat, selected: true },

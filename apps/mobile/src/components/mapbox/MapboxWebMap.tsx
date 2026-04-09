@@ -71,7 +71,11 @@ function buildMapHtml(params: {
       if (fitMode === 'route' && route && route.coordinates && route.coordinates.length) {
         route.coordinates.forEach(function (c) { bounds.extend(c); });
         map.fitBounds(bounds, { padding: 40, maxZoom: 14, duration: 0 });
-      } else if (fitMode === 'markers' && markers.length) {
+      } else if (fitMode === 'markers' && markers.length === 1) {
+        var only = markers[0];
+        map.setCenter([only.lng, only.lat]);
+        map.setZoom(12);
+      } else if (fitMode === 'markers' && markers.length > 1) {
         markers.forEach(function (m) { bounds.extend([m.lng, m.lat]); });
         map.fitBounds(bounds, { padding: 80, maxZoom: 12, duration: 0 });
       }
@@ -114,6 +118,11 @@ type Props = {
   onMarkerPress?: (id: string) => void;
   /** Change to remount map when route/markers change materially */
   mapKey?: string;
+  /**
+   * Use inside `ScrollView`: WebView often measures 0 height with `flex:1` only.
+   * Set to the same pixel height as the parent box (e.g. 220).
+   */
+  fixedHeight?: number;
 };
 
 export default function MapboxWebMap({
@@ -125,6 +134,7 @@ export default function MapboxWebMap({
   fit = 'center',
   onMarkerPress,
   mapKey,
+  fixedHeight,
 }: Props) {
   const html = useMemo(
     () =>
@@ -139,14 +149,20 @@ export default function MapboxWebMap({
     [accessToken, center.lat, center.lng, zoom, route, markers, fit],
   );
 
+  const layoutStyle =
+    fixedHeight != null
+      ? { height: fixedHeight, width: '100%' as const, alignSelf: 'stretch' as const }
+      : styles.flexFill;
+
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, layoutStyle]}>
       <WebView
         key={mapKey}
-        style={styles.web}
+        style={[styles.web, layoutStyle]}
         originWhitelist={['*']}
         source={{ html }}
         scrollEnabled={false}
+        nestedScrollEnabled
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="always"
@@ -165,5 +181,6 @@ export default function MapboxWebMap({
 
 const styles = StyleSheet.create({
   wrap: { overflow: 'hidden', backgroundColor: '#E2E8F0' },
+  flexFill: { flex: 1, width: '100%', alignSelf: 'stretch' },
   web: { flex: 1, backgroundColor: 'transparent' },
 });
